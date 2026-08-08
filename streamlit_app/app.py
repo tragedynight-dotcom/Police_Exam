@@ -91,12 +91,19 @@ def flush_auth_cookie():
     if token is None:
         return
     max_age = AUTH_COOKIE_DAYS * 24 * 60 * 60 if token else 0
+    
+    # 쿠키 생성 또는 파기(로그아웃)용 문자열 세팅
+    if token:
+        cookie_val = f"{AUTH_COOKIE_NAME}={token}; path=/; max-age={max_age}; SameSite=Lax"
+    else:
+        cookie_val = f"{AUTH_COOKIE_NAME}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax"
+
     # iframe·부모 문서 모두에 써서 로그아웃 시 확실히 지운다.
     components.html(
         f"""
         <script>
         (function () {{
-          const conf = "{AUTH_COOKIE_NAME}={token}; path=/; max-age={max_age}; SameSite=Lax";
+          const conf = "{cookie_val}";
           try {{ document.cookie = conf; }} catch (e) {{}}
           try {{
             if (window.parent && window.parent.document) {{
@@ -114,10 +121,26 @@ def flush_auth_cookie():
 
 def restore_user_from_cookie():
     token = None
+    
+    # 1. 최신 Streamlit (1.38.0+) 방식
     try:
-        token = st.context.cookies.get(AUTH_COOKIE_NAME)
+        if hasattr(st, "context") and hasattr(st.context, "cookies"):
+            token = st.context.cookies.get(AUTH_COOKIE_NAME)
     except Exception:
-        token = None
+        pass
+
+    # 2. 구버전 Streamlit 또는 특정 배포 환경을 위한 Fallback 방식
+    if not token:
+        try:
+            from streamlit.web.server.websocket_headers import _get_websocket_headers
+            headers = _get_websocket_headers()
+            if headers and "Cookie" in headers:
+                import http.cookies
+                parser = http.cookies.SimpleCookie(headers["Cookie"])
+                if AUTH_COOKIE_NAME in parser:
+                    token = parser[AUTH_COOKIE_NAME].value
+        except Exception:
+            pass
 
     # 로그아웃 직후: 이번 요청에 남은 옛 쿠키로 다시 로그인되지 않게 막는다.
     # 브라우저가 쿠키를 지운 다음 요청부터 플래그를 해제한다.
@@ -129,12 +152,17 @@ def restore_user_from_cookie():
 
     if st.session_state.get("user"):
         return
+        
+    if not token:
+        return
+        
     user_id = user_id_from_auth_token(token)
     if not user_id:
         return
     user = get_user_by_id(user_id)
     if not user:
         return
+        
     st.session_state.user = user
     if st.session_state.view in {"login", "register"}:
         st.session_state.view = "dashboard"
