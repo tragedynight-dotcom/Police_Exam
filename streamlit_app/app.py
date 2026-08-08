@@ -476,14 +476,19 @@ def view_register():
             ok, msg, code = register_user(name, email, password, organization)
             if ok and code:
                 try:
-                    from lib.mail import send_otp_email
+                    from lib.mail import MAIL_MODULE_VERSION, send_otp_email
 
                     send_otp_email(email, code)
                     st.session_state.dev_otp = None
                     st.success("인증번호를 이메일로 발송했습니다. 메일함을 확인해 주세요.")
                     go("verify", verify_email=email)
                 except Exception as e:
-                    st.error(f"인증번호 메일 발송에 실패했습니다. ({e})")
+                    from lib.mail import MAIL_MODULE_VERSION as _mv
+
+                    st.error(
+                        f"인증번호 메일 발송에 실패했습니다. "
+                        f"[mail {_mv}] {type(e).__name__}: {e!s}"
+                    )
             elif ok:
                 st.error("인증번호 발급에 실패했습니다. 다시 시도해 주세요.")
             else:
@@ -535,14 +540,19 @@ def view_forgot():
             ok, msg, code = forgot_password(email)
             if ok and code:
                 try:
-                    from lib.mail import send_otp_email
+                    from lib.mail import MAIL_MODULE_VERSION, send_otp_email
 
                     send_otp_email(email, code)
                     st.session_state.dev_otp = None
                     st.success("인증번호를 이메일로 발송했습니다. 메일함을 확인해 주세요.")
                     go("reset", reset_email=email)
                 except Exception as e:
-                    st.error(f"인증번호 메일 발송에 실패했습니다. ({e})")
+                    from lib.mail import MAIL_MODULE_VERSION as _mv
+
+                    st.error(
+                        f"인증번호 메일 발송에 실패했습니다. "
+                        f"[mail {_mv}] {type(e).__name__}: {e!s}"
+                    )
             elif ok:
                 st.error("인증번호 발급에 실패했습니다. 다시 시도해 주세요.")
             else:

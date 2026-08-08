@@ -5,8 +5,12 @@ import os
 import smtplib
 import ssl
 from email.message import EmailMessage
+from email.policy import SMTP
 from pathlib import Path
 from urllib import error, request
+
+# Bump when uploading so we can confirm Cloud got the new file
+MAIL_MODULE_VERSION = "2026-08-09-ascii3"
 
 
 def _load_dotenv() -> None:
@@ -80,9 +84,7 @@ def _resolve_smtp() -> tuple[str, int, str, str]:
         elif lower.endswith("@hanmail.net") or lower.endswith("@daum.net"):
             host, port = "smtp.daum.net", port or 465
         else:
-            raise RuntimeError(
-                "MAIL_HOST가 없습니다. Secrets에 MAIL_HOST를 넣어 주세요."
-            )
+            raise RuntimeError("MAIL_HOST missing in Streamlit Secrets")
     if not port:
         port = 465
     return host, port, user, password
@@ -109,38 +111,40 @@ def _send_emailjs(to: str, code: str) -> None:
     try:
         with request.urlopen(req, timeout=20) as resp:
             if resp.status >= 400:
-                raise RuntimeError(f"EmailJS 발송 실패: {resp.status}")
+                raise RuntimeError(f"EmailJS failed: {resp.status}")
     except error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"EmailJS 발송 실패: {body or e.code}") from e
+        raise RuntimeError(f"EmailJS failed: {body or e.code}") from e
 
 
 def _build_message(user: str, to: str, code: str) -> EmailMessage:
-    msg = EmailMessage()
-    msg["Subject"] = "[DaMoa] OTP code"
+    # Streamlit Cloud Linux locale is often ASCII-only.
+    # Keep headers + body ASCII to avoid encode errors.
+    msg = EmailMessage(policy=SMTP)
+    msg["Subject"] = f"[DaMoa] verification code {code}"
     msg["From"] = user
     msg["To"] = to
-    msg.set_content(
-        f"인증번호: {code}\n유효시간: 10분",
-        charset="utf-8",
+    body = (
+        f"DaMoa verification code: {code}\n"
+        f"Valid for 10 minutes.\n"
     )
-    msg.add_alternative(
-        f"""
-      <div style="font-family:'Malgun Gothic',sans-serif;line-height:1.6;color:#132238">
-        <h2 style="color:#0b2a4a">DaMoa 인증번호</h2>
-        <p>아래 인증번호를 입력하세요.</p>
-        <p style="font-size:28px;font-weight:700;letter-spacing:6px">{code}</p>
-        <p>유효시간: <strong>10분</strong></p>
-      </div>
-        """,
-        subtype="html",
-        charset="utf-8",
-    )
+    msg.set_content(body)
     return msg
 
 
 def _send_smtp(to: str, code: str) -> None:
     host, port, user, password = _resolve_smtp()
+    # Guard: credentials must be ASCII for SMTP AUTH on some servers
+    try:
+        user.encode("ascii")
+        password.encode("ascii")
+        host.encode("ascii")
+        to.encode("ascii")
+    except UnicodeEncodeError as e:
+        raise RuntimeError(
+            f"Non-ASCII in mail settings ({MAIL_MODULE_VERSION}): {e}"
+        ) from e
+
     msg = _build_message(user, to, code)
     context = ssl.create_default_context()
     try:
@@ -157,13 +161,18 @@ def _send_smtp(to: str, code: str) -> None:
                 server.send_message(msg)
     except smtplib.SMTPAuthenticationError as e:
         raise RuntimeError(
-            "메일 로그인 실패: MAIL_USER/MAIL_PASS와 호스트가 맞는지 확인하세요. "
-            f"({e.smtp_code})"
+            f"SMTP login failed ({MAIL_MODULE_VERSION}) code={e.smtp_code}"
         ) from e
     except smtplib.SMTPException as e:
-        raise RuntimeError(f"SMTP 발송 실패: {e}") from e
+        raise RuntimeError(f"SMTP send failed ({MAIL_MODULE_VERSION}): {e}") from e
     except OSError as e:
-        raise RuntimeError(f"메일 서버 연결 실패({host}:{port}): {e}") from e
+        raise RuntimeError(
+            f"SMTP connect failed ({MAIL_MODULE_VERSION}) {host}:{port}: {e}"
+        ) from e
+    except UnicodeEncodeError as e:
+        raise RuntimeError(
+            f"SMTP encode failed ({MAIL_MODULE_VERSION}): {e}"
+        ) from e
 
 
 def send_otp_email(to: str, code: str) -> str:
@@ -174,6 +183,6 @@ def send_otp_email(to: str, code: str) -> str:
         _send_emailjs(to, code)
         return "emailjs"
     raise RuntimeError(
-        "메일 발송 설정이 없습니다. Streamlit Secrets에 "
-        "MAIL_USER, MAIL_PASS, MAIL_HOST, MAIL_PORT를 넣어 주세요."
+        f"Mail not configured ({MAIL_MODULE_VERSION}). "
+        "Set MAIL_USER, MAIL_PASS, MAIL_HOST, MAIL_PORT in Secrets."
     )
