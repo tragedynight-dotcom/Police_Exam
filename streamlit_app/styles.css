@@ -53,6 +53,21 @@ div[data-testid="stSidebar"] { display: none !important; }
   box-sizing: border-box !important;
 }
 
+/* 인증 화면: 로그인 폼만 가운데 카드 */
+body:has(.auth-form-col):not(:has(.app-shell)) .block-container {
+  max-width: 440px !important;
+  width: min(440px, calc(100vw - 1.5rem)) !important;
+  background: #fff !important;
+  border-radius: 1.5rem !important;
+  border: 1px solid rgba(255,255,255,0.15) !important;
+  box-shadow: 0 30px 80px rgba(0,0,0,0.35) !important;
+  padding: 2rem 1.8rem 1.6rem !important;
+}
+
+.auth-form-col {
+  width: 100%;
+}
+
 .auth-left {
   background: linear-gradient(160deg, #071c33, #0b2a4a 55%, #1f4e79);
   color: #fff;
@@ -1416,11 +1431,16 @@ div[data-testid="stHorizontalBlock"]:has(.auth-left) {
 }
 
 div[data-testid="stHorizontalBlock"]:has(.auth-left) > div:first-child {
+  display: none !important;
+  width: 0 !important;
+  min-width: 0 !important;
+  flex: 0 0 0 !important;
   padding: 0 !important;
-  background: transparent !important;
 }
 
 div[data-testid="stHorizontalBlock"]:has(.auth-left) > div:last-child {
+  width: 100% !important;
+  flex: 1 1 100% !important;
   padding: 2rem 1.8rem 1.6rem !important;
   background: #fff !important;
 }
@@ -1429,7 +1449,7 @@ div[data-testid="stHorizontalBlock"]:has(.auth-left) [data-testid="stMarkdownCon
   margin-bottom: 0 !important;
 }
 
-.auth-left { border-radius: 0 !important; }
+.auth-left { display: none !important; }
 
 .app-shell .block-container,
 body.app-mode .block-container {

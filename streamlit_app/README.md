@@ -21,5 +21,5 @@ python -m streamlit run streamlit_app/app.py
 ## 참고
 
 - `@police.go.kr` 이메일만 가입·로그인 가능
-- Streamlit 버전에서는 OTP를 화면에 표시합니다 (메일 설정 없이도 테스트 가능)
+- 인증번호는 화면에 표시하지 않으며, EmailJS/SMTP 설정으로 메일 발송합니다
 - Next.js와 동시에 같은 DB를 쓰면 잠금이 날 수 있으니, 가능하면 하나만 실행하세요

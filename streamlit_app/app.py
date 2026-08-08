@@ -399,16 +399,11 @@ def email_input(label: str = "아이디", key: str = "email_local") -> str:
     return full_police_email(local or "")
 
 def auth_layout(title: str, subtitle: str | None, body):
-    left, right = st.columns([1.05, 0.95], gap="small")
-    with left:
-        st.markdown('<div class="auth-panel-col">', unsafe_allow_html=True)
-        auth_left_panel()
-        st.markdown("</div>", unsafe_allow_html=True)
-    with right:
-        st.markdown('<div class="auth-form-col">', unsafe_allow_html=True)
-        auth_form_header(title, subtitle)
-        body()
-        st.markdown("</div>", unsafe_allow_html=True)
+    # 로그인/가입: 왼쪽 브랜드 패널 없이 폼 카드만 표시
+    st.markdown('<div class="auth-form-col">', unsafe_allow_html=True)
+    auth_form_header(title, subtitle)
+    body()
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ---------- Auth views ----------
@@ -479,10 +474,18 @@ def view_register():
         )
         if st.button("인증번호 받기", type="primary", use_container_width=True):
             ok, msg, code = register_user(name, email, password, organization)
-            if ok:
-                st.session_state.dev_otp = code
-                st.success(msg)
-                go("verify", verify_email=email)
+            if ok and code:
+                try:
+                    from lib.mail import send_otp_email
+
+                    send_otp_email(email, code)
+                    st.session_state.dev_otp = None
+                    st.success("인증번호를 이메일로 발송했습니다. 메일함을 확인해 주세요.")
+                    go("verify", verify_email=email)
+                except Exception as e:
+                    st.error(f"인증번호 메일 발송에 실패했습니다. ({e})")
+            elif ok:
+                st.error("인증번호 발급에 실패했습니다. 다시 시도해 주세요.")
             else:
                 st.error(msg)
         if st.button("로그인으로", type="secondary"):
@@ -502,8 +505,6 @@ def view_verify():
             value=st.session_state.verify_email,
             key="verify_email_input",
         )
-        if st.session_state.dev_otp:
-            st.info(f"개발용 인증번호: **{st.session_state.dev_otp}**")
         code = st.text_input("인증번호 6자리", max_chars=6, key="verify_code", placeholder="6자리")
         if st.button("인증 완료", type="primary", use_container_width=True):
             ok, msg = verify_otp(email, code)
@@ -532,10 +533,18 @@ def view_forgot():
         email = email_input(key="forgot_local")
         if st.button("인증번호 받기", type="primary", use_container_width=True):
             ok, msg, code = forgot_password(email)
-            if ok:
-                st.session_state.dev_otp = code
-                st.success(msg)
-                go("reset", reset_email=email)
+            if ok and code:
+                try:
+                    from lib.mail import send_otp_email
+
+                    send_otp_email(email, code)
+                    st.session_state.dev_otp = None
+                    st.success("인증번호를 이메일로 발송했습니다. 메일함을 확인해 주세요.")
+                    go("reset", reset_email=email)
+                except Exception as e:
+                    st.error(f"인증번호 메일 발송에 실패했습니다. ({e})")
+            elif ok:
+                st.error("인증번호 발급에 실패했습니다. 다시 시도해 주세요.")
             else:
                 st.error(msg)
         if st.button("로그인으로", type="secondary"):
@@ -555,8 +564,6 @@ def view_reset():
             value=st.session_state.reset_email,
             key="reset_email_input",
         )
-        if st.session_state.dev_otp:
-            st.info(f"개발용 인증번호: **{st.session_state.dev_otp}**")
         code = st.text_input("인증번호 6자리", max_chars=6, key="reset_code", placeholder="6자리")
         pw = st.text_input("새 비밀번호 (8자 이상)", type="password", key="reset_pw")
         pw2 = st.text_input("새 비밀번호 확인", type="password", key="reset_pw2")
@@ -581,11 +588,12 @@ def view_mail_setup():
     def body():
         st.markdown(
             """
-            Streamlit 버전에서는 인증번호를 화면에 바로 표시합니다.  
-            Next.js 버전처럼 실제 메일을 쓰려면 EmailJS/SMTP 환경변수를 설정하세요.
+            인증번호는 이메일로만 발송됩니다. 화면에 표시하지 않습니다.
+
+            Streamlit Cloud **Secrets** 또는 환경변수에 메일 설정을 넣어 주세요.
 
             - `EMAILJS_SERVICE_ID`, `EMAILJS_TEMPLATE_ID`, `EMAILJS_PUBLIC_KEY`, `EMAILJS_PRIVATE_KEY`
-            - 또는 `MAIL_USER`, `MAIL_PASS`
+            - 또는 `MAIL_USER`, `MAIL_PASS` (필요 시 `MAIL_HOST`, `MAIL_PORT`)
             """
         )
         if st.button("로그인으로", type="secondary"):
