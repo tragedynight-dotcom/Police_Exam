@@ -10,7 +10,7 @@ from pathlib import Path
 from urllib import error, request
 
 # Bump when uploading so we can confirm Cloud got the new file
-MAIL_MODULE_VERSION = "2026-08-09-ascii3"
+MAIL_MODULE_VERSION = "2026-08-09-ascii4"
 
 
 def _load_dotenv() -> None:
@@ -132,18 +132,24 @@ def _build_message(user: str, to: str, code: str) -> EmailMessage:
     return msg
 
 
+def _assert_ascii(label: str, value: str) -> None:
+    try:
+        value.encode("ascii")
+    except UnicodeEncodeError as e:
+        # Show only safe preview (no secrets): which chars are non-ascii
+        bad = "".join(sorted({ch for ch in value if ord(ch) > 127}))[:12]
+        raise RuntimeError(
+            f"Non-ASCII in {label} ({MAIL_MODULE_VERSION}). "
+            f"Remove Korean/special chars. bad={bad!r} len={len(value)}"
+        ) from e
+
+
 def _send_smtp(to: str, code: str) -> None:
     host, port, user, password = _resolve_smtp()
-    # Guard: credentials must be ASCII for SMTP AUTH on some servers
-    try:
-        user.encode("ascii")
-        password.encode("ascii")
-        host.encode("ascii")
-        to.encode("ascii")
-    except UnicodeEncodeError as e:
-        raise RuntimeError(
-            f"Non-ASCII in mail settings ({MAIL_MODULE_VERSION}): {e}"
-        ) from e
+    _assert_ascii("MAIL_USER", user)
+    _assert_ascii("MAIL_PASS", password)
+    _assert_ascii("MAIL_HOST", host)
+    _assert_ascii("recipient email", to)
 
     msg = _build_message(user, to, code)
     context = ssl.create_default_context()

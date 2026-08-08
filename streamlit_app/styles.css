@@ -28,6 +28,23 @@ header[data-testid="stHeader"],
 #MainMenu, footer, .stDeployButton,
 div[data-testid="stSidebar"] { display: none !important; }
 
+/* "Press Enter to submit/apply" 안내 숨김 */
+[data-testid="InputInstructions"],
+div[data-testid="InputInstructions"],
+[data-testid="stTextInput"] [data-testid="InputInstructions"],
+[data-testid="stTextInput"] .st-ae,
+.stTextInput [data-testid="InputInstructions"] {
+  display: none !important;
+  visibility: hidden !important;
+  height: 0 !important;
+  max-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
 [data-testid="stMain"] {
   display: flex !important;
   flex-direction: column !important;

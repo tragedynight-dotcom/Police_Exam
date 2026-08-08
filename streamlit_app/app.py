@@ -410,7 +410,20 @@ def auth_layout(title: str, subtitle: str | None, body):
 
 def view_login():
     def body():
-        with st.form("login_form", clear_on_submit=False, border=False):
+        try:
+            _login_form = st.form(
+                "login_form",
+                clear_on_submit=False,
+                border=False,
+                enter_to_submit=False,
+            )
+        except TypeError:
+            _login_form = st.form(
+                "login_form",
+                clear_on_submit=False,
+                border=False,
+            )
+        with _login_form:
             email = email_input(key="login_local")
             password = st.text_input(
                 "비밀번호",
@@ -463,37 +476,58 @@ def view_login():
 
 def view_register():
     def body():
-        name = st.text_input("닉네임", key="reg_name", placeholder="닉네임")
-        organization = st.text_input("소속 (선택)", key="reg_org", placeholder="소속")
-        email = email_input(key="reg_local")
-        password = st.text_input(
-            "비밀번호 (8자 이상)",
-            type="password",
-            key="reg_pw",
-            placeholder="비밀번호",
-        )
-        if st.button("인증번호 받기", type="primary", use_container_width=True):
-            ok, msg, code = register_user(name, email, password, organization)
-            if ok and code:
-                try:
-                    from lib.mail import MAIL_MODULE_VERSION, send_otp_email
+        try:
+            _reg_form = st.form(
+                "register_form",
+                clear_on_submit=False,
+                border=False,
+                enter_to_submit=False,
+            )
+        except TypeError:
+            _reg_form = st.form(
+                "register_form",
+                clear_on_submit=False,
+                border=False,
+            )
+        with _reg_form:
+            name = st.text_input("닉네임", key="reg_name", placeholder="닉네임")
+            organization = st.text_input("소속 (선택)", key="reg_org", placeholder="소속")
+            email = email_input(key="reg_local")
+            password = st.text_input(
+                "비밀번호 (8자 이상)",
+                type="password",
+                key="reg_pw",
+                placeholder="비밀번호",
+            )
+            submitted = st.form_submit_button(
+                "인증번호 받기",
+                type="primary",
+                use_container_width=True,
+            )
+            if submitted:
+                ok, msg, code = register_user(name, email, password, organization)
+                if ok and code:
+                    try:
+                        from lib.mail import send_otp_email
 
-                    send_otp_email(email, code)
-                    st.session_state.dev_otp = None
-                    st.success("인증번호를 이메일로 발송했습니다. 메일함을 확인해 주세요.")
-                    go("verify", verify_email=email)
-                except Exception as e:
-                    from lib.mail import MAIL_MODULE_VERSION as _mv
+                        send_otp_email(email, code)
+                        st.session_state.dev_otp = None
+                        st.success(
+                            "인증번호를 이메일로 발송했습니다. 메일함을 확인해 주세요."
+                        )
+                        go("verify", verify_email=email)
+                    except Exception as e:
+                        from lib.mail import MAIL_MODULE_VERSION as _mv
 
-                    st.error(
-                        f"인증번호 메일 발송에 실패했습니다. "
-                        f"[mail {_mv}] {type(e).__name__}: {e!s}"
-                    )
-            elif ok:
-                st.error("인증번호 발급에 실패했습니다. 다시 시도해 주세요.")
-            else:
-                st.error(msg)
-        if st.button("로그인으로", type="secondary"):
+                        st.error(
+                            f"인증번호 메일 발송에 실패했습니다. "
+                            f"[mail {_mv}] {type(e).__name__}: {e!s}"
+                        )
+                elif ok:
+                    st.error("인증번호 발급에 실패했습니다. 다시 시도해 주세요.")
+                else:
+                    st.error(msg)
+        if st.button("로그인으로", type="secondary", key="reg_to_login"):
             go("login")
 
     auth_layout(
@@ -1830,15 +1864,69 @@ def view_result():
         '<p class="damoa-brand">지역 경찰 실무 역량 평가 DaMoa</p>',
         unsafe_allow_html=True,
     )
-    title_l, title_r = st.columns([5, 1.1], gap="small")
-    with title_l:
-        st.markdown(
-            '<p class="damoa-title greet-title">채점 결과</p>',
-            unsafe_allow_html=True,
+    st.markdown(
+        '<p class="damoa-title greet-title">채점 결과</p>',
+        unsafe_allow_html=True,
+    )
+
+    def result_action_row(key_prefix: str) -> None:
+        cat_id = (
+            questions[0]["categoryId"] if attempt["kind"] == "topic" else None
         )
-    with title_r:
-        if st.button("홈으로", type="secondary", key="result_home_top"):
-            go("dashboard")
+        c1, c2, c3 = st.columns(3, gap="small")
+        with c1:
+            st.markdown(
+                '<div class="result-actions-mark"></div>',
+                unsafe_allow_html=True,
+            )
+            if st.button(
+                "홈으로",
+                use_container_width=True,
+                type="secondary",
+                key=f"{key_prefix}_home",
+            ):
+                go("dashboard")
+        with c2:
+            can_retry_wrong = bool(wrongs)
+            if st.button(
+                "틀린 문제 다시 풀기",
+                use_container_width=True,
+                type="secondary",
+                key=f"{key_prefix}_retry_wrong",
+                disabled=not can_retry_wrong,
+            ):
+                aid, err = start_exam(
+                    user["id"],
+                    kind=attempt["kind"],
+                    category_id=cat_id,
+                    reveal_mode=attempt["revealMode"],
+                    force_new=True,
+                    retry_wrong_from=attempt_id,
+                )
+                if err:
+                    st.error(err)
+                else:
+                    go("exam", attempt_id=aid, q_index=0, feedback=None)
+        with c3:
+            if st.button(
+                "다시 응시하기",
+                use_container_width=True,
+                type="secondary",
+                key=f"{key_prefix}_retry_all",
+            ):
+                aid, err = start_exam(
+                    user["id"],
+                    kind=attempt["kind"],
+                    category_id=cat_id,
+                    reveal_mode=attempt["revealMode"],
+                    force_new=True,
+                )
+                if err:
+                    st.error(err)
+                else:
+                    go("exam", attempt_id=aid, q_index=0, feedback=None)
+
+    result_action_row("result_top")
 
     m1, m2, m3 = st.columns(3, gap="small")
     with m1:
@@ -1965,49 +2053,7 @@ def view_result():
         if q["source"]:
             st.caption(f"출처: {q['source']}")
 
-    c1, c2, c3 = st.columns(3, gap="small")
-    with c1:
-        st.markdown('<div class="result-actions-mark"></div>', unsafe_allow_html=True)
-        if st.button("홈으로", use_container_width=True, type="secondary", key="result_home_bottom"):
-            go("dashboard")
-    with c2:
-        can_retry_wrong = bool(wrongs)
-        if st.button(
-            "틀린 문제 다시 풀기",
-            use_container_width=True,
-            type="secondary",
-            key="result_retry_wrong",
-            disabled=not can_retry_wrong,
-        ):
-            cat_id = (
-                questions[0]["categoryId"] if attempt["kind"] == "topic" else None
-            )
-            aid, err = start_exam(
-                user["id"],
-                kind=attempt["kind"],
-                category_id=cat_id,
-                reveal_mode=attempt["revealMode"],
-                force_new=True,
-                retry_wrong_from=attempt_id,
-            )
-            if err:
-                st.error(err)
-            else:
-                go("exam", attempt_id=aid, q_index=0, feedback=None)
-    with c3:
-        if st.button("다시 응시하기", type="primary", use_container_width=True, key="result_retry_all"):
-            cat_id = questions[0]["categoryId"] if attempt["kind"] == "topic" else None
-            aid, err = start_exam(
-                user["id"],
-                kind=attempt["kind"],
-                category_id=cat_id,
-                reveal_mode=attempt["revealMode"],
-                force_new=True,
-            )
-            if err:
-                st.error(err)
-            else:
-                go("exam", attempt_id=aid, q_index=0, feedback=None)
+    result_action_row("result_bottom")
 
 
 def main():
