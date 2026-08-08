@@ -125,9 +125,7 @@ def reset_result_filters():
     """결과 화면의 토글/패널 상태를 초기화한다."""
     st.session_state.result_wrong_only = False
     st.session_state.result_show_topic_mix = False
-    # 하단 버튼 클릭 시 이미 화면에 그려진 토글 위젯 상태를 건드리면 발생하는 Streamlit 예외 방지.
-    # 화면 전환 시 알아서 지워지므로 명시적으로 False로 바꾸지 않음.
-    # st.session_state.result_wrong_toggle = False  <- 삭제됨
+    st.session_state.result_wrong_toggle = False
 
 
 def go(view: str, **kwargs):
@@ -163,7 +161,7 @@ def request_scroll_to(selector: str, block: str = "center"):
 
 
 def flush_scroll_top():
-    """화면 전환/답안 채점 후 스크롤 위치를 맞춘다."""
+    """화면 전환/답안 채점 후 스크롤 위치를 맞춘다. (CORS 에러 방지 처리 완료)"""
     target = st.session_state.pop("_scroll_to", None)
     to_top = st.session_state.pop("_scroll_top", False)
     if not target and not to_top:
@@ -182,7 +180,15 @@ def flush_scroll_top():
             <!-- scroll:{nonce} -->
             <script>
             (function () {{
-              const doc = window.parent.document;
+              let doc = document;
+              let win = window;
+              try {{
+                if (window.parent && window.parent.document) {{
+                  doc = window.parent.document;
+                  win = window.parent;
+                }}
+              }} catch (e) {{}} // iframe 보안 제약 무시
+              
               const sel = {sel_js};
               const block = {block_js};
               function toTarget() {{
@@ -209,8 +215,15 @@ def flush_scroll_top():
         <!-- scroll-top:{nonce} -->
         <script>
         (function () {{
-          const doc = window.parent.document;
-          const win = window.parent;
+          let doc = document;
+          let win = window;
+          try {{
+            if (window.parent && window.parent.document) {{
+              doc = window.parent.document;
+              win = window.parent;
+            }}
+          }} catch (e) {{}} // iframe 보안 제약 무시
+
           function toTop() {{
             const seen = new Set();
             function zero(el) {{
