@@ -4,8 +4,7 @@ import json
 import os
 import smtplib
 import ssl
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
+from email.message import EmailMessage
 from pathlib import Path
 from urllib import error, request
 
@@ -15,7 +14,6 @@ def _load_dotenv() -> None:
         from dotenv import load_dotenv
     except ImportError:
         return
-    # streamlit_app/lib -> repo root, and streamlit_app/
     here = Path(__file__).resolve()
     for p in (here.parents[2] / ".env", here.parents[1] / ".env"):
         if p.exists():
@@ -99,7 +97,7 @@ def _send_emailjs(to: str, code: str) -> None:
         "template_params": {
             "to_email": to,
             "code": code,
-            "from_name": "지역 경찰 실무 역량 평가 DaMoa",
+            "from_name": "DaMoa",
         },
     }
     req = request.Request(
@@ -117,23 +115,27 @@ def _send_emailjs(to: str, code: str) -> None:
         raise RuntimeError(f"EmailJS 발송 실패: {body or e.code}") from e
 
 
-def _build_message(user: str, to: str, code: str) -> MIMEMultipart:
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = "[DaMoa] 이메일 인증번호"
-    # 일부 SMTP는 From 표시이름(한글)에서 실패함 → 주소만 사용
+def _build_message(user: str, to: str, code: str) -> EmailMessage:
+    msg = EmailMessage()
+    msg["Subject"] = "[DaMoa] OTP code"
     msg["From"] = user
     msg["To"] = to
-    text = f"인증번호: {code}\n유효시간: 10분"
-    html = f"""
+    msg.set_content(
+        f"인증번호: {code}\n유효시간: 10분",
+        charset="utf-8",
+    )
+    msg.add_alternative(
+        f"""
       <div style="font-family:'Malgun Gothic',sans-serif;line-height:1.6;color:#132238">
         <h2 style="color:#0b2a4a">DaMoa 인증번호</h2>
         <p>아래 인증번호를 입력하세요.</p>
         <p style="font-size:28px;font-weight:700;letter-spacing:6px">{code}</p>
         <p>유효시간: <strong>10분</strong></p>
       </div>
-    """
-    msg.attach(MIMEText(text, "plain", "utf-8"))
-    msg.attach(MIMEText(html, "html", "utf-8"))
+        """,
+        subtype="html",
+        charset="utf-8",
+    )
     return msg
 
 
@@ -148,15 +150,14 @@ def _send_smtp(to: str, code: str) -> None:
                 server.starttls(context=context)
                 server.ehlo()
                 server.login(user, password)
-                server.sendmail(user, [to], msg.as_string())
+                server.send_message(msg)
         else:
             with smtplib.SMTP_SSL(host, port, context=context, timeout=30) as server:
                 server.login(user, password)
-                server.sendmail(user, [to], msg.as_string())
+                server.send_message(msg)
     except smtplib.SMTPAuthenticationError as e:
         raise RuntimeError(
             "메일 로그인 실패: MAIL_USER/MAIL_PASS와 호스트가 맞는지 확인하세요. "
-            "한메일이면 smtp.daum.net, 네이버면 smtp.naver.com 입니다. "
             f"({e.smtp_code})"
         ) from e
     except smtplib.SMTPException as e:
@@ -166,7 +167,6 @@ def _send_smtp(to: str, code: str) -> None:
 
 
 def send_otp_email(to: str, code: str) -> str:
-    # SMTP가 있으면 우선 사용 (비어 있는 EmailJS 키 오설정 방지)
     if has_smtp():
         _send_smtp(to, code)
         return "smtp"
