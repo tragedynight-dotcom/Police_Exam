@@ -6,22 +6,44 @@ import smtplib
 import ssl
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from pathlib import Path
 from urllib import error, request
 
 
+def _load_dotenv() -> None:
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        return
+    # streamlit_app/lib -> repo root, and streamlit_app/
+    here = Path(__file__).resolve()
+    for p in (here.parents[2] / ".env", here.parents[1] / ".env"):
+        if p.exists():
+            load_dotenv(p, override=False)
+
+
+_load_dotenv()
+
+
 def _env(name: str) -> str:
-    val = os.environ.get(name, "").strip()
-    if val:
-        return val
+    val = os.environ.get(name)
+    if val is not None and str(val).strip():
+        return str(val).strip().strip('"').strip("'")
     try:
         import streamlit as st
 
         secrets = getattr(st, "secrets", None)
-        if secrets is not None and name in secrets:
-            return str(secrets[name]).strip()
+        if secrets is None:
+            return ""
+        try:
+            raw = secrets[name]
+        except Exception:
+            raw = None
+        if raw is None:
+            return ""
+        return str(raw).strip().strip('"').strip("'")
     except Exception:
-        pass
-    return ""
+        return ""
 
 
 def has_emailjs() -> bool:
@@ -42,6 +64,30 @@ def has_smtp() -> bool:
 
 def is_mail_configured() -> bool:
     return has_emailjs() or has_smtp()
+
+
+def _resolve_smtp() -> tuple[str, int, str, str]:
+    user = _env("MAIL_USER")
+    password = _env("MAIL_PASS")
+    host = _env("MAIL_HOST")
+    port_raw = _env("MAIL_PORT")
+    port = int(port_raw) if port_raw else 0
+
+    lower = user.lower()
+    if not host:
+        if lower.endswith("@gmail.com"):
+            host, port = "smtp.gmail.com", port or 465
+        elif lower.endswith("@naver.com"):
+            host, port = "smtp.naver.com", port or 465
+        elif lower.endswith("@hanmail.net") or lower.endswith("@daum.net"):
+            host, port = "smtp.daum.net", port or 465
+        else:
+            raise RuntimeError(
+                "MAIL_HOST가 없습니다. Secrets에 MAIL_HOST를 넣어 주세요."
+            )
+    if not port:
+        port = 465
+    return host, port, user, password
 
 
 def _send_emailjs(to: str, code: str) -> None:
@@ -71,23 +117,11 @@ def _send_emailjs(to: str, code: str) -> None:
         raise RuntimeError(f"EmailJS 발송 실패: {body or e.code}") from e
 
 
-def _send_smtp(to: str, code: str) -> None:
-    user = _env("MAIL_USER")
-    password = _env("MAIL_PASS")
-    host = _env("MAIL_HOST")
-    port = int(_env("MAIL_PORT") or "465")
-
-    if not host:
-        if user.endswith("@gmail.com"):
-            host, port = "smtp.gmail.com", 465
-        elif user.endswith("@naver.com"):
-            host, port = "smtp.naver.com", 465
-        else:
-            raise RuntimeError("MAIL_HOST를 설정해 주세요.")
-
+def _build_message(user: str, to: str, code: str) -> MIMEMultipart:
     msg = MIMEMultipart("alternative")
     msg["Subject"] = "[DaMoa] 이메일 인증번호"
-    msg["From"] = f"지역 경찰 실무 역량 평가 DaMoa <{user}>"
+    # 일부 SMTP는 From 표시이름(한글)에서 실패함 → 주소만 사용
+    msg["From"] = user
     msg["To"] = to
     text = f"인증번호: {code}\n유효시간: 10분"
     html = f"""
@@ -100,18 +134,46 @@ def _send_smtp(to: str, code: str) -> None:
     """
     msg.attach(MIMEText(text, "plain", "utf-8"))
     msg.attach(MIMEText(html, "html", "utf-8"))
+    return msg
 
+
+def _send_smtp(to: str, code: str) -> None:
+    host, port, user, password = _resolve_smtp()
+    msg = _build_message(user, to, code)
     context = ssl.create_default_context()
-    with smtplib.SMTP_SSL(host, port, context=context) as server:
-        server.login(user, password)
-        server.sendmail(user, [to], msg.as_string())
+    try:
+        if port == 587:
+            with smtplib.SMTP(host, port, timeout=30) as server:
+                server.ehlo()
+                server.starttls(context=context)
+                server.ehlo()
+                server.login(user, password)
+                server.sendmail(user, [to], msg.as_string())
+        else:
+            with smtplib.SMTP_SSL(host, port, context=context, timeout=30) as server:
+                server.login(user, password)
+                server.sendmail(user, [to], msg.as_string())
+    except smtplib.SMTPAuthenticationError as e:
+        raise RuntimeError(
+            "메일 로그인 실패: MAIL_USER/MAIL_PASS와 호스트가 맞는지 확인하세요. "
+            "한메일이면 smtp.daum.net, 네이버면 smtp.naver.com 입니다. "
+            f"({e.smtp_code})"
+        ) from e
+    except smtplib.SMTPException as e:
+        raise RuntimeError(f"SMTP 발송 실패: {e}") from e
+    except OSError as e:
+        raise RuntimeError(f"메일 서버 연결 실패({host}:{port}): {e}") from e
 
 
 def send_otp_email(to: str, code: str) -> str:
-    if has_emailjs():
-        _send_emailjs(to, code)
-        return "emailjs"
+    # SMTP가 있으면 우선 사용 (비어 있는 EmailJS 키 오설정 방지)
     if has_smtp():
         _send_smtp(to, code)
         return "smtp"
-    raise RuntimeError("메일 발송 설정이 없습니다.")
+    if has_emailjs():
+        _send_emailjs(to, code)
+        return "emailjs"
+    raise RuntimeError(
+        "메일 발송 설정이 없습니다. Streamlit Secrets에 "
+        "MAIL_USER, MAIL_PASS, MAIL_HOST, MAIL_PORT를 넣어 주세요."
+    )
