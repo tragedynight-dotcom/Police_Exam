@@ -63,7 +63,7 @@ def init_state():
         "reset_email": "",
         "topics_mode": "immediate",
         "attempt_id": None,
-        "q_index": 0,
+        "q_index": -1,  # 새로 진입함을 구분하기 위해 -1로 초기화
         "feedback": None,
         "result_wrong_only": False,
         "result_show_topic_mix": False,
@@ -341,7 +341,7 @@ def auth_form_header(title: str, subtitle: str | None = None):
     )
 
 
-def email_input(label: str = "아이디", key: str = "email_local") -> str:
+def email_input(label: str = "경찰웹메일 ID", key: str = "email_local") -> str:
     st.markdown(
         f'<p style="margin:0 0 0.3rem;font-size:0.9rem;font-weight:500;color:#132238;">{label}</p>',
         unsafe_allow_html=True,
@@ -351,7 +351,7 @@ def email_input(label: str = "아이디", key: str = "email_local") -> str:
         local = st.text_input(
             label,
             key=key,
-            placeholder="아이디",
+            placeholder="경찰웹메일 ID",
             label_visibility="collapsed",
         )
     with c2:
@@ -454,7 +454,7 @@ def view_register():
             )
         with _reg_form:
             name = st.text_input("닉네임", key="reg_name", placeholder="닉네임")
-            organization = st.text_input("소속 (선택)", key="reg_org", placeholder="소속")
+            organization = st.text_input("소속", key="reg_org", placeholder="소속")
             email = email_input(key="reg_local")
             password = st.text_input(
                 "비밀번호 (8자 이상)",
@@ -1395,7 +1395,7 @@ def view_dashboard():
             )
         with res_r:
             if st.button("이어하기", type="primary", key="dash_resume"):
-                go("exam", attempt_id=active["id"], q_index=0, feedback=None)
+                go("exam", attempt_id=active["id"], q_index=-1, feedback=None)
 
     topics_panel = st.columns(1)[0]
     with topics_panel:
@@ -1441,7 +1441,7 @@ def view_dashboard():
             if err:
                 st.error(err)
             else:
-                go("exam", attempt_id=aid, q_index=0, feedback=None)
+                go("exam", attempt_id=aid, q_index=-1, feedback=None)
 
     recent = list(recent_attempts(user["id"], limit=3))[:3]
     st.markdown(
@@ -1546,7 +1546,7 @@ def view_topics():
             )
         with res_r:
             if st.button("이어하기", type="primary", key="topics_resume"):
-                go("exam", attempt_id=active["id"], q_index=0, feedback=None)
+                go("exam", attempt_id=active["id"], q_index=-1, feedback=None)
 
     cats = sort_topics(topic_categories())
     total_all = sum(int(c["questionCount"]) for c in cats)
@@ -1573,7 +1573,7 @@ def view_topics():
                 if err:
                     st.error(err)
                 else:
-                    go("exam", attempt_id=aid, q_index=0, feedback=None)
+                    go("exam", attempt_id=aid, q_index=-1, feedback=None)
 
     for i in range(0, len(cats), 2):
         cols = st.columns(2, gap="small")
@@ -1606,7 +1606,7 @@ def view_topics():
                         if err:
                             st.error(err)
                         else:
-                            go("exam", attempt_id=aid, q_index=0, feedback=None)
+                            go("exam", attempt_id=aid, q_index=-1, feedback=None)
 
 
 def view_exam():
@@ -1630,7 +1630,10 @@ def view_exam():
         st.warning("제한 시간이 종료되어 자동 제출되었습니다.")
         go("result", attempt_id=attempt_id)
 
-    if st.session_state.q_index == 0 and st.session_state.feedback is None:
+    # 이전 버튼을 누르거나 네비게이션 시 강제 점프하는 버그 수정
+    # q_index가 -1 (시험장 첫 진입)일 때만 미해결 문항으로 자동 점프
+    if st.session_state.q_index == -1:
+        st.session_state.q_index = 0
         for i, q in enumerate(questions):
             if q["userAnswer"] is None:
                 st.session_state.q_index = i
@@ -1853,7 +1856,7 @@ def view_result():
                 if err:
                     st.error(err)
                 else:
-                    go("exam", attempt_id=aid, q_index=0, feedback=None)
+                    go("exam", attempt_id=aid, q_index=-1, feedback=None)
         with c3:
             if st.button(
                 "다시 응시하기",
@@ -1871,7 +1874,7 @@ def view_result():
                 if err:
                     st.error(err)
                 else:
-                    go("exam", attempt_id=aid, q_index=0, feedback=None)
+                    go("exam", attempt_id=aid, q_index=-1, feedback=None)
 
     result_action_row("result_top")
 
