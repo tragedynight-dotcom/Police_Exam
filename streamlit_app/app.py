@@ -125,7 +125,9 @@ def reset_result_filters():
     """결과 화면의 토글/패널 상태를 초기화한다."""
     st.session_state.result_wrong_only = False
     st.session_state.result_show_topic_mix = False
-    st.session_state.result_wrong_toggle = False
+    # 하단 버튼 클릭 시 이미 화면에 그려진 토글 위젯 상태를 건드리면 발생하는 Streamlit 예외 방지.
+    # 화면 전환 시 알아서 지워지므로 명시적으로 False로 바꾸지 않음.
+    # st.session_state.result_wrong_toggle = False  <- 삭제됨
 
 
 def go(view: str, **kwargs):
@@ -1630,8 +1632,6 @@ def view_exam():
         st.warning("제한 시간이 종료되어 자동 제출되었습니다.")
         go("result", attempt_id=attempt_id)
 
-    # 이전 버튼을 누르거나 네비게이션 시 강제 점프하는 버그 수정
-    # q_index가 -1 (시험장 첫 진입)일 때만 미해결 문항으로 자동 점프
     if st.session_state.q_index == -1:
         st.session_state.q_index = 0
         for i, q in enumerate(questions):
