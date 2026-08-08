@@ -15,8 +15,6 @@ if str(ROOT) not in sys.path:
 from lib import auth as _auth  # noqa: E402
 
 ALLOWED_EMAIL_DOMAIN = _auth.ALLOWED_EMAIL_DOMAIN
-AUTH_COOKIE_DAYS = getattr(_auth, "AUTH_COOKIE_DAYS", 30)
-AUTH_COOKIE_NAME = getattr(_auth, "AUTH_COOKIE_NAME", "damoa_auth")
 forgot_password = _auth.forgot_password
 full_police_email = _auth.full_police_email
 get_user_by_id = _auth.get_user_by_id
@@ -53,7 +51,6 @@ st.set_page_config(
 )
 
 _CSS = (Path(__file__).resolve().parent / "styles.css").read_text(encoding="utf-8")
-# markdown sanitizer can leak CSS as text; st.html injects safely
 st.html(f"<style>{_CSS}</style>")
 
 
@@ -70,7 +67,6 @@ def init_state():
         "feedback": None,
         "result_wrong_only": False,
         "result_show_topic_mix": False,
-        "_auth_cookie_sync": None,
         "_force_logout": False,
         "_scroll_top": False,
         "_scroll_to": None,
@@ -81,88 +77,29 @@ def init_state():
             st.session_state[k] = v
 
 
-def set_auth_cookie(token: str | None):
-    """브라우저 쿠키에 로그인 토큰을 남겨 새로고침 후에도 세션을 복구한다."""
-    st.session_state._auth_cookie_sync = token if token else ""
-
-
-def flush_auth_cookie():
-    token = st.session_state.get("_auth_cookie_sync")
-    if token is None:
-        return
-    max_age = AUTH_COOKIE_DAYS * 24 * 60 * 60 if token else 0
-    
-    # 쿠키 생성 또는 파기(로그아웃)용 문자열 세팅
-    if token:
-        cookie_val = f"{AUTH_COOKIE_NAME}={token}; path=/; max-age={max_age}; SameSite=Lax"
-    else:
-        cookie_val = f"{AUTH_COOKIE_NAME}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax"
-
-    # iframe·부모 문서 모두에 써서 로그아웃 시 확실히 지운다.
-    components.html(
-        f"""
-        <script>
-        (function () {{
-          const conf = "{cookie_val}";
-          try {{ document.cookie = conf; }} catch (e) {{}}
-          try {{
-            if (window.parent && window.parent.document) {{
-              window.parent.document.cookie = conf;
-            }}
-          }} catch (e) {{}}
-        }})();
-        </script>
-        """,
-        height=0,
-        width=0,
-    )
-    st.session_state._auth_cookie_sync = None
-
-
-def restore_user_from_cookie():
-    token = None
-    
-    # 1. 최신 Streamlit (1.38.0+) 방식
-    try:
-        if hasattr(st, "context") and hasattr(st.context, "cookies"):
-            token = st.context.cookies.get(AUTH_COOKIE_NAME)
-    except Exception:
-        pass
-
-    # 2. 구버전 Streamlit 또는 특정 배포 환경을 위한 Fallback 방식
-    if not token:
-        try:
-            from streamlit.web.server.websocket_headers import _get_websocket_headers
-            headers = _get_websocket_headers()
-            if headers and "Cookie" in headers:
-                import http.cookies
-                parser = http.cookies.SimpleCookie(headers["Cookie"])
-                if AUTH_COOKIE_NAME in parser:
-                    token = parser[AUTH_COOKIE_NAME].value
-        except Exception:
-            pass
-
-    # 로그아웃 직후: 이번 요청에 남은 옛 쿠키로 다시 로그인되지 않게 막는다.
-    # 브라우저가 쿠키를 지운 다음 요청부터 플래그를 해제한다.
+def restore_user_from_url():
+    """URL의 query_params에서 토큰을 읽어와 새로고침 후에도 로그인 세션을 복구한다."""
     if st.session_state.get("_force_logout"):
         st.session_state.user = None
-        if not user_id_from_auth_token(token):
+        if "auth" not in st.query_params:
             st.session_state._force_logout = False
         return
 
     if st.session_state.get("user"):
         return
-        
+
+    token = st.query_params.get("auth")
     if not token:
         return
-        
+
     user_id = user_id_from_auth_token(token)
     if not user_id:
         return
+
     user = get_user_by_id(user_id)
     if not user:
         return
-        
+
     st.session_state.user = user
     if st.session_state.view in {"login", "register"}:
         st.session_state.view = "dashboard"
@@ -171,14 +108,16 @@ def restore_user_from_cookie():
 def login_success(user: dict, view: str = "dashboard", **kwargs):
     st.session_state._force_logout = False
     st.session_state.user = user
-    set_auth_cookie(make_auth_token(user["id"]))
+    token = make_auth_token(user["id"])
+    st.query_params["auth"] = token  # URL 파라미터에 토큰 세팅
     go(view, **kwargs)
 
 
 def logout():
     st.session_state.user = None
     st.session_state._force_logout = True
-    set_auth_cookie(None)
+    if "auth" in st.query_params:
+        del st.query_params["auth"]  # URL 파라미터 제거
     go("login")
 
 
@@ -186,7 +125,6 @@ def reset_result_filters():
     """결과 화면의 토글/패널 상태를 초기화한다."""
     st.session_state.result_wrong_only = False
     st.session_state.result_show_topic_mix = False
-    # st.toggle(key=...) 위젯 상태도 함께 리셋
     st.session_state.result_wrong_toggle = False
 
 
@@ -196,7 +134,6 @@ def go(view: str, **kwargs):
     st.session_state.view = view
     for k, v in kwargs.items():
         st.session_state[k] = v
-    # 결과 화면을 벗어나거나 다른 결과로 이동하면 필터 초기화
     if view != "result" or st.session_state.get("attempt_id") != prev_attempt:
         reset_result_filters()
     elif prev_view != "result":
@@ -230,7 +167,6 @@ def flush_scroll_top():
     if not target and not to_top:
         return
     nonce = int(st.session_state.get("_scroll_nonce", 0))
-    # components는 iframe이라 parent 문서를 스크롤해야 한다.
     if target:
         if isinstance(target, str):
             selector, block = target, "center"
@@ -309,7 +245,6 @@ def flush_scroll_top():
             }}
             win.scrollTo(0, 0);
           }}
-          // Streamlit이 위젯 포커스로 스크롤을 되돌리는 경우를 잠시 덮어쓴다.
           const until = Date.now() + 900;
           function lockTop() {{
             toTop();
@@ -426,8 +361,8 @@ def email_input(label: str = "아이디", key: str = "email_local") -> str:
         )
     return full_police_email(local or "")
 
+
 def auth_layout(title: str, subtitle: str | None, body):
-    # 로그인/가입: 왼쪽 브랜드 패널 없이 폼 카드만 표시
     st.markdown('<div class="auth-form-col">', unsafe_allow_html=True)
     auth_form_header(title, subtitle)
     body()
@@ -732,7 +667,6 @@ def app_shell_css():
             background: #f4f7fb !important;
             text-decoration: none !important;
           }
-          /* 인사말 옆 로그아웃은 작게, 칸 전체 사용 안 함 */
           div[data-testid='stHorizontalBlock']:has(.greet-title) .stButton > button[kind='secondary'],
           div[data-testid='stHorizontalBlock']:has(.greet-title) .stButton > button[data-testid='baseButton-secondary'] {
             width: auto !important;
@@ -749,7 +683,6 @@ def app_shell_css():
             width: auto !important;
             max-width: none !important;
           }
-          /* 이어하기 / 인사말: 모바일에서도 가로 한 줄 유지 */
           div[data-testid='stHorizontalBlock']:has(.resume-inline),
           div[data-testid='stHorizontalBlock']:has(.greet-title) {
             display: flex !important;
@@ -846,7 +779,6 @@ def app_shell_css():
           .greet-title, .damoa-title, .user-email {
             writing-mode: horizontal-tb !important;
           }
-          /* 주제별 실무 역량 임팩트 패널 */
           div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) {
             border: 1px solid rgba(201, 162, 39, 0.38) !important;
             background:
@@ -967,7 +899,6 @@ def app_shell_css():
             color: #0b2a4a !important;
             border: 1px solid rgba(255,255,255,0.7) !important;
           }
-          /* 실전 모의고사: 주제별보다 밝은 스틸 네이비 + 동일 골드 포인트 */
           div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) {
             border: 1px solid rgba(201, 162, 39, 0.32) !important;
             background:
@@ -1042,7 +973,6 @@ def app_shell_css():
             color: #0b2a4a !important;
             border: 1px solid rgba(255,255,255,0.85) !important;
           }
-          /* 주제 목록: 배너 안 문구+버튼 한 줄, 상하 여백 균일 */
           .card-banner-inner {
             margin: 0 !important;
             padding: 0 !important;
@@ -1135,7 +1065,6 @@ def app_shell_css():
             padding: 0.7rem 0.9rem !important;
             margin-bottom: 0.4rem;
           }
-          /* 최근 학습 현황: 제목 / 점수 / 결과 한 줄 */
           div[data-testid='stHorizontalBlock']:has(.recent-inline) {
             display: flex !important;
             flex-direction: row !important;
@@ -1179,7 +1108,6 @@ def app_shell_css():
             white-space: nowrap !important;
             width: auto !important;
           }
-          /* 틀린문제 토글 + 출제현황 버튼 한 줄 */
           div[data-testid='stHorizontalBlock']:has(.result-filter-row) {
             display: flex !important;
             flex-direction: row !important;
@@ -1212,7 +1140,6 @@ def app_shell_css():
             border-radius: 0.65rem !important;
             white-space: nowrap !important;
           }
-          /* 채점 결과 통계 칸 축소 */
           div[data-testid='stHorizontalBlock']:has(.result-stat) {
             display: flex !important;
             flex-direction: row !important;
@@ -1245,7 +1172,6 @@ def app_shell_css():
             margin: 0 !important;
             white-space: nowrap !important;
           }
-          /* 결과 하단 액션: 홈/틀린문제/다시응시 한 줄 */
           div[data-testid='stHorizontalBlock']:has(.result-actions-mark) {
             display: flex !important;
             flex-direction: row !important;
@@ -1286,7 +1212,6 @@ def app_shell_css():
             width: 100% !important;
             line-height: 1.15 !important;
           }
-          /* 시험 하단: 다음(위) / 이전·홈으로(아래 한 칸) */
           .element-container:has(.exam-nav-next-mark),
           [data-testid='stElementContainer']:has(.exam-nav-next-mark) {
             display: none !important;
@@ -1343,7 +1268,6 @@ def app_shell_css():
             box-sizing: border-box !important;
             line-height: 1.2 !important;
           }
-          /* 주제 선택: 학습/시험/홈 한 줄 작은 칩 */
           div[data-testid='stHorizontalBlock']:has(.topics-chips-mark) {
             display: flex !important;
             flex-direction: row !important;
@@ -1402,7 +1326,6 @@ def sort_topics(cats):
 
 
 def topic_mix_rows(questions: list) -> list[dict]:
-    """모의고사 문항을 주제별로 집계한다."""
     import re
     from collections import Counter, defaultdict
 
@@ -1652,7 +1575,6 @@ def view_topics():
                 else:
                     go("exam", attempt_id=aid, q_index=0, feedback=None)
 
-    # 2-column topic cards (문구 + 버튼 한 줄)
     for i in range(0, len(cats), 2):
         cols = st.columns(2, gap="small")
         for col, cat in zip(cols, cats[i : i + 2]):
@@ -1788,7 +1710,6 @@ def view_exam():
             if is_learn:
                 request_scroll_to(".exam-feedback-anchor", block="center")
             else:
-                # 시험보기/모의고사: 보기 클릭 시 다음 문제 상단으로
                 if not is_last:
                     st.session_state.q_index = idx + 1
                     st.session_state.feedback = None
@@ -1825,7 +1746,6 @@ def view_exam():
             if feedback.get("source"):
                 st.caption(f"출처: {feedback['source']}")
 
-    # 학습 모드: 다음/학습 종료 / 시험 모드: 마지막 문항만 제출하기 (다음 버튼 없음)
     show_primary = is_learn or is_last
     if show_primary:
         next_label = (
@@ -1878,7 +1798,6 @@ def view_result():
     if attempt["status"] != "submitted":
         go("exam", attempt_id=attempt_id)
 
-    # 다른 결과로 들어오면 필터/출제 현황 초기화
     if st.session_state.get("_result_filter_attempt") != attempt_id:
         st.session_state._result_filter_attempt = attempt_id
         reset_result_filters()
@@ -2086,8 +2005,7 @@ def view_result():
 
 def main():
     init_state()
-    flush_auth_cookie()
-    restore_user_from_cookie()
+    restore_user_from_url()  # URL에서 로그인 토큰 복구
     view = st.session_state.view
     if st.session_state.user and view in {"login", "register"}:
         view = "dashboard"
@@ -2106,7 +2024,6 @@ def main():
         "result": view_result,
     }
     routes.get(view, view_login)()
-    # 화면 렌더 이후에 스크롤해야 Streamlit이 스크롤을 되돌리는 걸 막을 수 있다.
     flush_scroll_top()
 
 
