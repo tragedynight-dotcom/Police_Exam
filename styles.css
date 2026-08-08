@@ -1,0 +1,1519 @@
+@import url("https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800;900&display=swap");
+
+:root {
+  --navy: #0b2a4a;
+  --navy-deep: #071c33;
+  --steel: #1f4e79;
+  --accent: #c9a227;
+  --paper: #f4f7fb;
+  --ink: #132238;
+  --muted: #5b6b7c;
+  --line: #d7e0ea;
+}
+
+html, body, [class*="css"], .stApp, .stMarkdown, .stTextInput, .stButton {
+  font-family: "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif !important;
+}
+
+.stApp {
+  background:
+    radial-gradient(circle at top left, rgba(201, 162, 39, 0.16), transparent 34%),
+    linear-gradient(160deg, #071c33 0%, #0b2a4a 42%, #123b63 100%);
+  color: var(--ink);
+}
+
+header[data-testid="stHeader"],
+[data-testid="stToolbar"],
+[data-testid="stDecoration"],
+#MainMenu, footer, .stDeployButton,
+div[data-testid="stSidebar"] { display: none !important; }
+
+[data-testid="stMain"] {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  width: 100% !important;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+[data-testid="stMain"]::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
+.block-container {
+  padding-top: 2rem !important;
+  padding-bottom: 2rem !important;
+  max-width: 1120px !important;
+  width: min(1120px, calc(100vw - 1.5rem)) !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  box-sizing: border-box !important;
+}
+
+.auth-left {
+  background: linear-gradient(160deg, #071c33, #0b2a4a 55%, #1f4e79);
+  color: #fff;
+  padding: 2.6rem 2.4rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 620px;
+}
+
+.auth-eyebrow {
+  color: var(--accent);
+  font-size: 0.92rem;
+  margin: 0 0 1rem;
+}
+
+.auth-hero {
+  margin: 0;
+  font-size: clamp(2rem, 3.2vw, 2.9rem);
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+}
+
+.auth-lead {
+  margin: 1.25rem 0 0;
+  max-width: 26rem;
+  color: rgba(255,255,255,0.75);
+  font-size: 1rem;
+  line-height: 1.7;
+}
+
+.auth-security {
+  margin-top: 2rem;
+  border: 1px solid rgba(255,255,255,0.15);
+  background: rgba(255,255,255,0.05);
+  border-radius: 1rem;
+  padding: 1.1rem 1.2rem;
+  color: rgba(255,255,255,0.82);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.auth-security ul { margin: 0.45rem 0 0; padding-left: 1.2rem; }
+
+.auth-brand-link {
+  color: var(--steel);
+  font-weight: 600;
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.auth-title {
+  margin: 0.65rem 0 0;
+  color: var(--ink);
+  font-size: 1.8rem;
+  font-weight: 700;
+}
+
+.auth-sub {
+  margin: 0.45rem 0 1rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.email-domain-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  height: 2.9rem;
+  min-height: 2.9rem;
+  background: var(--paper);
+  border-left: 1px solid var(--line);
+  color: var(--steel);
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  padding: 0 0.85rem;
+  letter-spacing: 0;
+  width: 100%;
+  min-width: 7.25rem;
+}
+
+/*
+  아이디 행만 타깃 (:not(:has(.auth-left))로 로그인 전체 레이아웃 제외)
+*/
+div[data-testid="stHorizontalBlock"]:has(.email-domain-mark):not(:has(.auth-left)) {
+  gap: 0 !important;
+  border: 1px solid var(--line) !important;
+  border-radius: 0.85rem !important;
+  overflow: hidden !important;
+  background: #fff !important;
+  margin: 0 0 0.55rem 0 !important;
+  align-items: stretch !important;
+  flex-wrap: nowrap !important;
+  min-height: 2.9rem !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.email-domain-mark):not(:has(.auth-left)) [data-testid="stTextInput"],
+div[data-testid="stHorizontalBlock"]:has(.email-domain-mark):not(:has(.auth-left)) [data-testid="stTextInput"] > div,
+div[data-testid="stHorizontalBlock"]:has(.email-domain-mark):not(:has(.auth-left)) [data-baseweb="input"] {
+  height: 2.9rem !important;
+  min-height: 2.9rem !important;
+  margin: 0 !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.email-domain-mark):not(:has(.auth-left)) [data-testid="stTextInput"] div,
+div[data-testid="stHorizontalBlock"]:has(.email-domain-mark):not(:has(.auth-left)) input {
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.email-domain-mark):not(:has(.auth-left)) input {
+  height: 2.9rem !important;
+  min-height: 2.9rem !important;
+  padding: 0 1rem !important;
+  font-size: 0.9rem !important;
+  line-height: 2.9rem !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.email-domain-mark):not(:has(.auth-left)) > div {
+  padding: 0 !important;
+  min-height: 2.9rem !important;
+  display: flex !important;
+  align-items: stretch !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.email-domain-mark):not(:has(.auth-left)) > div:first-child {
+  flex: 1 1 auto !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.email-domain-mark):not(:has(.auth-left)) > div:last-child {
+  flex: 0 0 auto !important;
+  flex-grow: 0 !important;
+  flex-shrink: 0 !important;
+  flex-basis: auto !important;
+  width: auto !important;
+  min-width: 7.25rem !important;
+  max-width: none !important;
+  background: var(--paper) !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.email-domain-mark):not(:has(.auth-left)) > div:last-child [data-testid="stMarkdownContainer"],
+div[data-testid="stHorizontalBlock"]:has(.email-domain-mark):not(:has(.auth-left)) > div:last-child [data-testid="stMarkdownContainer"] > div,
+div[data-testid="stHorizontalBlock"]:has(.email-domain-mark):not(:has(.auth-left)) > div:last-child [data-testid="stMarkdownContainer"] p {
+  margin: 0 !important;
+  padding: 0 !important;
+  height: 100% !important;
+  width: 100% !important;
+  background: var(--paper) !important;
+}
+
+.auth-link-label {
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 500;
+  margin: 0;
+  line-height: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.auth-link-label):not(:has(.auth-left)):not(:has(.email-domain-mark)) {
+  gap: 0.15rem !important;
+  align-items: center !important;
+  margin-top: 0.25rem !important;
+  flex-wrap: nowrap !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.auth-link-label):not(:has(.auth-left)):not(:has(.email-domain-mark)) > div {
+  flex: 0 0 auto !important;
+  width: auto !important;
+  min-width: 0 !important;
+  padding: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.auth-link-label):not(:has(.auth-left)):not(:has(.email-domain-mark)) [data-testid="stMarkdownContainer"] {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.auth-link-label):not(:has(.auth-left)):not(:has(.email-domain-mark)) .stButton {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.auth-link-label):not(:has(.auth-left)):not(:has(.email-domain-mark)) .stButton > button {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  color: var(--steel) !important;
+  font-size: 0.9rem !important;
+  font-weight: 700 !important;
+  line-height: 1.5rem !important;
+  height: 1.5rem !important;
+  width: auto !important;
+  min-height: 1.5rem !important;
+  max-height: 1.5rem !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  justify-content: flex-start !important;
+  align-items: center !important;
+  white-space: nowrap !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.auth-link-label):not(:has(.auth-left)):not(:has(.email-domain-mark)) .stButton > button:hover {
+  color: var(--navy) !important;
+  background: transparent !important;
+  text-decoration: underline !important;
+}
+
+.damoa-card {
+  background: rgba(255,255,255,0.96);
+  border-radius: 1.5rem;
+  padding: 1.8rem 1.7rem;
+  border: 1px solid rgba(255,255,255,0.15);
+  box-shadow: 0 30px 80px rgba(0,0,0,0.35);
+  margin-bottom: 1rem;
+}
+
+.damoa-brand { color: var(--accent); font-size: 0.9rem; margin-bottom: 0.2rem; }
+
+.exam-mode-tag {
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.exam-mode-tag.is-learn {
+  color: #0f7a4b !important;
+}
+
+.exam-mode-tag.is-exam {
+  color: #1f4e79 !important;
+}
+
+.exam-mode-tag.is-mock {
+  color: #b45309 !important;
+}
+.damoa-title { color: var(--navy); font-size: 1.7rem; font-weight: 800; margin: 0; }
+.damoa-muted { color: var(--muted); font-size: 0.92rem; }
+.greet-title {
+  margin-top: 0.25rem !important;
+  margin-bottom: 0 !important;
+  line-height: 1.3;
+  writing-mode: horizontal-tb !important;
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+}
+
+.user-email,
+.damoa-brand,
+.damoa-title,
+.damoa-muted,
+.resume-title,
+.resume-desc,
+.section-title,
+.section-label,
+.section-desc {
+  writing-mode: horizontal-tb !important;
+  word-break: keep-all !important;
+  overflow-wrap: anywhere;
+}
+
+.user-email {
+  margin-top: 0.05rem !important;
+  margin-bottom: 0.25rem !important;
+  line-height: 1.35 !important;
+}
+
+.resume-inline {
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
+  box-sizing: border-box;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+}
+
+.resume-title {
+  margin: 0 !important;
+  font-weight: 700;
+  color: #0b2a4a;
+  font-size: 0.95rem;
+  line-height: 1.35 !important;
+}
+
+.resume-desc {
+  margin: 0.4rem 0 0 !important;
+  color: #5b6b7c;
+  font-size: 0.85rem;
+  line-height: 1.4 !important;
+}
+
+/* 이어하기 배너: 문구 + 작은 버튼 한 줄 (모바일에서도 가로 유지) */
+div[data-testid="stHorizontalBlock"]:has(.resume-inline):not(:has(.auth-left)):not(:has(.greet-title)) {
+  display: flex !important;
+  flex-direction: row !important;
+  gap: 0.75rem !important;
+  align-items: center !important;
+  margin: 0.5rem 0 0.65rem !important;
+  padding: 0.9rem 1rem !important;
+  border: 1px solid #c9a227 !important;
+  background: rgba(201,162,39,0.12) !important;
+  border-radius: 1rem !important;
+  flex-wrap: nowrap !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.resume-inline):not(:has(.auth-left)):not(:has(.greet-title)) > div {
+  /* Streamlit 모바일에서 column 100% 세로 스택 방지 */
+  flex-grow: 0 !important;
+  flex-shrink: 1 !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.resume-inline):not(:has(.auth-left)):not(:has(.greet-title)) > div:first-child {
+  flex: 1 1 auto !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  display: flex !important;
+  align-items: center !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.resume-inline):not(:has(.auth-left)):not(:has(.greet-title)) > div:last-child {
+  flex: 0 0 auto !important;
+  width: auto !important;
+  min-width: auto !important;
+  max-width: none !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+}
+
+/* 배너 안 글 위·아래 여백 균형 (Streamlit 마크다운 기본 마진 제거) */
+div[data-testid="stHorizontalBlock"]:has(.resume-inline):not(:has(.auth-left)):not(:has(.greet-title)) [data-testid="stVerticalBlock"] {
+  gap: 0 !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.resume-inline):not(:has(.auth-left)):not(:has(.greet-title)) [data-testid="stElementContainer"],
+div[data-testid="stHorizontalBlock"]:has(.resume-inline):not(:has(.auth-left)):not(:has(.greet-title)) .element-container {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.resume-inline):not(:has(.auth-left)):not(:has(.greet-title)) [data-testid="stMarkdownContainer"],
+div[data-testid="stHorizontalBlock"]:has(.resume-inline):not(:has(.auth-left)):not(:has(.greet-title)) [data-testid="stMarkdownContainer"] > div {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.resume-inline):not(:has(.auth-left)):not(:has(.greet-title)) [data-testid="stMarkdownContainer"] p.resume-title {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.resume-inline):not(:has(.auth-left)):not(:has(.greet-title)) [data-testid="stMarkdownContainer"] p.resume-desc {
+  margin: 0.4rem 0 0 !important;
+  padding: 0 !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.resume-inline):not(:has(.auth-left)):not(:has(.greet-title)) .stButton,
+div[data-testid="stHorizontalBlock"]:has(.resume-inline):not(:has(.auth-left)):not(:has(.greet-title)) .stButton > button {
+  width: auto !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.resume-inline):not(:has(.auth-left)):not(:has(.greet-title)) .stButton > button {
+  font-size: 0.8rem !important;
+  font-weight: 600 !important;
+  padding: 0.55rem 0.9rem !important;
+  border-radius: 0.65rem !important;
+  white-space: nowrap !important;
+}
+
+/* 안녕하세요 줄 끝 작은 로그아웃 (모바일에서도 가로 유지) */
+div[data-testid="stHorizontalBlock"]:has(.greet-title):not(:has(.auth-left)):not(:has(.email-domain-mark)) {
+  display: flex !important;
+  flex-direction: row !important;
+  gap: 0.5rem !important;
+  align-items: center !important;
+  margin-top: 0.15rem !important;
+  margin-bottom: 0 !important;
+  flex-wrap: nowrap !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.greet-title):not(:has(.auth-left)):not(:has(.email-domain-mark)) > div {
+  flex-grow: 0 !important;
+  flex-shrink: 1 !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.greet-title):not(:has(.auth-left)):not(:has(.email-domain-mark)) > div:first-child {
+  flex: 1 1 auto !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.greet-title):not(:has(.auth-left)):not(:has(.email-domain-mark)) > div:last-child {
+  flex: 0 0 auto !important;
+  width: auto !important;
+  min-width: auto !important;
+  max-width: none !important;
+  padding: 0 !important;
+  display: flex !important;
+  justify-content: flex-end !important;
+  align-items: center !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.greet-title):not(:has(.auth-left)):not(:has(.email-domain-mark)) .stButton {
+  margin: 0 !important;
+  width: auto !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.greet-title):not(:has(.auth-left)):not(:has(.email-domain-mark)) .stButton > button {
+  background: #fff !important;
+  color: var(--navy) !important;
+  border: 1px solid var(--line) !important;
+  box-shadow: none !important;
+  border-radius: 0.65rem !important;
+  font-size: 0.8rem !important;
+  font-weight: 600 !important;
+  line-height: 1 !important;
+  height: auto !important;
+  min-height: 0 !important;
+  width: auto !important;
+  padding: 0.45rem 0.7rem !important;
+  margin-top: 0.45rem !important;
+  white-space: nowrap !important;
+  text-decoration: none !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.greet-title):not(:has(.auth-left)):not(:has(.email-domain-mark)) .stButton > button:hover {
+  background: var(--paper) !important;
+  border-color: var(--steel) !important;
+  text-decoration: none !important;
+}
+
+/* 주제별 실무 역량: 임팩트 있는 네이비 히어로 패널 */
+.topics-panel-inner {
+  margin: 0 0 0.75rem !important;
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
+}
+
+.topics-kicker {
+  margin: 0 !important;
+  color: #c9a227 !important;
+  font-size: 0.82rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.04em !important;
+}
+
+.topics-hero {
+  margin: 0.45rem 0 0 !important;
+  color: #ffffff !important;
+  font-size: clamp(1.2rem, 2.8vw, 1.65rem) !important;
+  font-weight: 800 !important;
+  line-height: 1.3 !important;
+  letter-spacing: -0.02em !important;
+  white-space: nowrap !important;
+}
+
+.topics-meta {
+  margin: 0.55rem 0 0 !important;
+  color: rgba(255, 255, 255, 0.78) !important;
+  font-size: 0.92rem !important;
+  line-height: 1.4 !important;
+}
+
+.topics-meta span {
+  color: #ffffff !important;
+  font-weight: 700 !important;
+}
+
+.topics-mode-hints {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.45rem;
+  margin-top: 0.85rem;
+}
+
+.topics-mode-hints p {
+  margin: 0 !important;
+  padding: 0.45rem 0.55rem;
+  border-radius: 0.55rem;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.88) !important;
+  font-size: 0.8rem !important;
+  line-height: 1.35 !important;
+}
+
+.topics-mode-hints strong {
+  display: block;
+  margin-bottom: 0.1rem;
+  color: #c9a227 !important;
+  font-size: 0.78rem !important;
+}
+
+div[data-testid="stHorizontalBlock"] > div:has(.topics-panel-inner):not(:has(.auth-left)) {
+  border: 1px solid rgba(201, 162, 39, 0.38) !important;
+  background:
+    radial-gradient(circle at top right, rgba(201, 162, 39, 0.22), transparent 42%),
+    linear-gradient(145deg, #071c33 0%, #0b2a4a 52%, #123b63 100%) !important;
+  border-radius: 1.15rem !important;
+  padding: 1.25rem 1.2rem 1.05rem !important;
+  margin: 0.75rem 0 1rem !important;
+  box-sizing: border-box !important;
+  box-shadow: 0 16px 40px rgba(7, 28, 51, 0.22) !important;
+}
+
+/* 배너 안 학습/시험 모드: 한 줄 + 강조 */
+div[data-testid="stHorizontalBlock"] > div:has(.topics-panel-inner) div[data-testid="stHorizontalBlock"]:has(.mode-btns-mark) {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  gap: 0.5rem !important;
+  align-items: stretch !important;
+  margin: 0 !important;
+}
+
+div[data-testid="stHorizontalBlock"] > div:has(.topics-panel-inner) div[data-testid="stHorizontalBlock"]:has(.mode-btns-mark) > div {
+  flex: 1 1 0 !important;
+  width: 50% !important;
+  min-width: 0 !important;
+  max-width: 50% !important;
+}
+
+div[data-testid="stHorizontalBlock"] > div:has(.topics-panel-inner) div[data-testid="stHorizontalBlock"]:has(.mode-btns-mark) .element-container:has(.mode-btns-mark),
+div[data-testid="stHorizontalBlock"] > div:has(.topics-panel-inner) div[data-testid="stHorizontalBlock"]:has(.mode-btns-mark) [data-testid="stElementContainer"]:has(.mode-btns-mark) {
+  display: none !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+div[data-testid="stHorizontalBlock"] > div:has(.topics-panel-inner) div[data-testid="stHorizontalBlock"]:has(.mode-btns-mark) .stButton {
+  width: 100% !important;
+  margin: 0 !important;
+}
+
+div[data-testid="stHorizontalBlock"] > div:has(.topics-panel-inner) div[data-testid="stHorizontalBlock"]:has(.mode-btns-mark) .stButton > button,
+div[data-testid="stHorizontalBlock"] > div:has(.topics-panel-inner) div[data-testid="stHorizontalBlock"]:has(.mode-btns-mark) .stButton > button[kind="primary"],
+div[data-testid="stHorizontalBlock"] > div:has(.topics-panel-inner) div[data-testid="stHorizontalBlock"]:has(.mode-btns-mark) .stButton > button[data-testid="baseButton-primary"],
+div[data-testid="stHorizontalBlock"] > div:has(.topics-panel-inner) div[data-testid="stHorizontalBlock"]:has(.mode-btns-mark) .stButton > button *,
+div[data-testid="stHorizontalBlock"] > div:has(.topics-panel-inner) div[data-testid="stHorizontalBlock"]:has(.mode-btns-mark) .stButton > button[kind="primary"] *,
+div[data-testid="stHorizontalBlock"] > div:has(.topics-panel-inner) div[data-testid="stHorizontalBlock"]:has(.mode-btns-mark) .stButton > button[data-testid="baseButton-primary"] * {
+  font-size: 0.95rem !important;
+  font-weight: 800 !important;
+  font-family: "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif !important;
+  letter-spacing: -0.01em !important;
+}
+
+div[data-testid="stHorizontalBlock"] > div:has(.topics-panel-inner) div[data-testid="stHorizontalBlock"]:has(.mode-btns-mark) .stButton > button,
+div[data-testid="stHorizontalBlock"] > div:has(.topics-panel-inner) div[data-testid="stHorizontalBlock"]:has(.mode-btns-mark) .stButton > button[kind="primary"],
+div[data-testid="stHorizontalBlock"] > div:has(.topics-panel-inner) div[data-testid="stHorizontalBlock"]:has(.mode-btns-mark) .stButton > button[data-testid="baseButton-primary"] {
+  padding: 0.65rem 0.7rem !important;
+  border-radius: 0.7rem !important;
+  min-height: 2.75rem !important;
+  height: 2.75rem !important;
+  box-sizing: border-box !important;
+  white-space: nowrap !important;
+  width: 100% !important;
+  margin: 0 !important;
+  line-height: 1.2 !important;
+  background: #c9a227 !important;
+  color: #071c33 !important;
+  border: none !important;
+}
+
+div[data-testid="stHorizontalBlock"] > div:has(.topics-panel-inner) div[data-testid="stHorizontalBlock"]:has(.mode-btns-mark) .stButton > button[kind="secondary"],
+div[data-testid="stHorizontalBlock"] > div:has(.topics-panel-inner) div[data-testid="stHorizontalBlock"]:has(.mode-btns-mark) .stButton > button[data-testid="baseButton-secondary"],
+div[data-testid="stHorizontalBlock"] > div:has(.topics-panel-inner) div[data-testid="stHorizontalBlock"]:has(.mode-btns-mark) .stButton > button[kind="secondary"] *,
+div[data-testid="stHorizontalBlock"] > div:has(.topics-panel-inner) div[data-testid="stHorizontalBlock"]:has(.mode-btns-mark) .stButton > button[data-testid="baseButton-secondary"] * {
+  font-size: 0.95rem !important;
+  font-weight: 800 !important;
+  font-family: "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif !important;
+  letter-spacing: -0.01em !important;
+}
+
+div[data-testid="stHorizontalBlock"] > div:has(.topics-panel-inner) div[data-testid="stHorizontalBlock"]:has(.mode-btns-mark) .stButton > button[kind="secondary"],
+div[data-testid="stHorizontalBlock"] > div:has(.topics-panel-inner) div[data-testid="stHorizontalBlock"]:has(.mode-btns-mark) .stButton > button[data-testid="baseButton-secondary"] {
+  padding: 0.65rem 0.7rem !important;
+  border-radius: 0.7rem !important;
+  min-height: 2.75rem !important;
+  height: 2.75rem !important;
+  box-sizing: border-box !important;
+  white-space: nowrap !important;
+  width: 100% !important;
+  margin: 0 !important;
+  line-height: 1.2 !important;
+  background: rgba(255, 255, 255, 0.96) !important;
+  color: #0b2a4a !important;
+  border: 1px solid rgba(255, 255, 255, 0.7) !important;
+}
+
+/* 실전 모의고사 임팩트 패널 + 배너 안 버튼 */
+.mock-panel-inner {
+  margin: 0 0 0.75rem !important;
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
+}
+
+.mock-kicker {
+  margin: 0 !important;
+  color: #c9a227 !important;
+  font-size: 0.82rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.04em !important;
+}
+
+.mock-hero {
+  margin: 0.45rem 0 0 !important;
+  color: #ffffff !important;
+  font-size: clamp(1.2rem, 2.8vw, 1.65rem) !important;
+  font-weight: 800 !important;
+  line-height: 1.3 !important;
+  letter-spacing: -0.02em !important;
+  white-space: nowrap !important;
+}
+
+.mock-meta {
+  margin: 0.55rem 0 0 !important;
+  color: rgba(255, 255, 255, 0.78) !important;
+  font-size: 0.92rem !important;
+  line-height: 1.4 !important;
+}
+
+.mock-meta span {
+  color: #ffffff !important;
+  font-weight: 700 !important;
+}
+
+.mock-desc {
+  margin: 0.45rem 0 0 !important;
+  color: rgba(255, 255, 255, 0.72) !important;
+  font-size: 0.86rem !important;
+  line-height: 1.5 !important;
+}
+
+div[data-testid="stHorizontalBlock"] > div:has(.mock-panel-inner):not(:has(.auth-left)) {
+  border: 1px solid rgba(201, 162, 39, 0.32) !important;
+  background:
+    radial-gradient(circle at 90% 10%, rgba(201, 162, 39, 0.16), transparent 48%),
+    linear-gradient(155deg, #0e3358 0%, #1f4e79 52%, #2d6494 100%) !important;
+  border-radius: 1.15rem !important;
+  padding: 1.25rem 1.2rem 1.05rem !important;
+  margin: 0 0 1rem !important;
+  box-sizing: border-box !important;
+  box-shadow: 0 16px 40px rgba(7, 28, 51, 0.18) !important;
+}
+
+div[data-testid="stHorizontalBlock"] > div:has(.mock-panel-inner) .element-container:has(.mock-btn-mark),
+div[data-testid="stHorizontalBlock"] > div:has(.mock-panel-inner) [data-testid="stElementContainer"]:has(.mock-btn-mark) {
+  display: none !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+div[data-testid="stHorizontalBlock"] > div:has(.mock-panel-inner) .stButton {
+  width: 100% !important;
+  margin: 0 !important;
+}
+
+div[data-testid="stHorizontalBlock"] > div:has(.mock-panel-inner) .stButton > button,
+div[data-testid="stHorizontalBlock"] > div:has(.mock-panel-inner) .stButton > button[kind="primary"],
+div[data-testid="stHorizontalBlock"] > div:has(.mock-panel-inner) .stButton > button[data-testid="baseButton-primary"],
+div[data-testid="stHorizontalBlock"] > div:has(.mock-panel-inner) .stButton > button *,
+div[data-testid="stHorizontalBlock"] > div:has(.mock-panel-inner) .stButton > button[kind="primary"] *,
+div[data-testid="stHorizontalBlock"] > div:has(.mock-panel-inner) .stButton > button[data-testid="baseButton-primary"] * {
+  font-size: 0.95rem !important;
+  font-weight: 800 !important;
+  font-family: "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif !important;
+  letter-spacing: -0.01em !important;
+}
+
+div[data-testid="stHorizontalBlock"] > div:has(.mock-panel-inner) .stButton > button,
+div[data-testid="stHorizontalBlock"] > div:has(.mock-panel-inner) .stButton > button[kind="primary"],
+div[data-testid="stHorizontalBlock"] > div:has(.mock-panel-inner) .stButton > button[data-testid="baseButton-primary"] {
+  padding: 0.65rem 0.7rem !important;
+  border-radius: 0.7rem !important;
+  min-height: 2.75rem !important;
+  height: 2.75rem !important;
+  width: 100% !important;
+  margin: 0 !important;
+  background: #ffffff !important;
+  color: #0b2a4a !important;
+  border: 1px solid rgba(255, 255, 255, 0.85) !important;
+}
+
+/* 주제 목록 배너: 문구 + 버튼 한 줄 */
+.card-banner-inner {
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+}
+
+.card-banner-inner .section-title {
+  font-size: 1.05rem !important;
+  margin: 0 !important;
+  line-height: 1.35 !important;
+}
+
+.card-banner-inner .section-desc {
+  font-size: 0.8rem !important;
+  margin: 0.2rem 0 0 !important;
+  line-height: 1.4 !important;
+}
+
+div[data-testid="stHorizontalBlock"] > div:has(.card-banner-inner):not(:has(.auth-left)):not(:has(.topics-panel-inner)) {
+  border: 1px solid #d7e0ea !important;
+  background: #f4f7fb !important;
+  border-radius: 1rem !important;
+  padding: 0.85rem 0.9rem !important;
+  margin: 0.35rem 0 !important;
+  box-sizing: border-box !important;
+}
+
+div[data-testid="stHorizontalBlock"] > div:has(.card-banner-inner):not(:has(.auth-left)):not(:has(.topics-panel-inner)) [data-testid="stVerticalBlock"] {
+  gap: 0 !important;
+}
+
+div[data-testid="stHorizontalBlock"] > div:has(.card-banner-inner):not(:has(.auth-left)):not(:has(.topics-panel-inner)) [data-testid="stElementContainer"],
+div[data-testid="stHorizontalBlock"] > div:has(.card-banner-inner):not(:has(.auth-left)):not(:has(.topics-panel-inner)) .element-container,
+div[data-testid="stHorizontalBlock"] > div:has(.card-banner-inner):not(:has(.auth-left)):not(:has(.topics-panel-inner)) [data-testid="stMarkdownContainer"],
+div[data-testid="stHorizontalBlock"] > div:has(.card-banner-inner):not(:has(.auth-left)):not(:has(.topics-panel-inner)) [data-testid="stMarkdownContainer"] > div,
+div[data-testid="stHorizontalBlock"] > div:has(.card-banner-inner):not(:has(.auth-left)):not(:has(.topics-panel-inner)) [data-testid="stMarkdownContainer"] p {
+  margin: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+div[data-testid="stHorizontalBlock"] > div:has(.card-banner-navy):not(:has(.auth-left)) {
+  border: 1px solid rgba(11, 42, 74, 0.2) !important;
+  background: rgba(11, 42, 74, 0.05) !important;
+}
+
+div[data-testid="stHorizontalBlock"] > div:has(.card-banner-gold):not(:has(.auth-left)) {
+  border: 1px solid #c9a227 !important;
+  background: rgba(201, 162, 39, 0.12) !important;
+}
+
+/* 문구|버튼 행만 대상 (중첩 horizontal 제외) */
+div[data-testid="stHorizontalBlock"]:has(.card-banner-btn-mark):not(:has(div[data-testid="stHorizontalBlock"])) {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+  gap: 0.5rem !important;
+  margin: 0 !important;
+  min-height: 0 !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.card-banner-btn-mark):not(:has(div[data-testid="stHorizontalBlock"])) > div:last-child {
+  flex: 0 0 auto !important;
+  width: auto !important;
+  min-width: 4.8rem !important;
+  max-width: 7.5rem !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.card-banner-btn-mark):not(:has(div[data-testid="stHorizontalBlock"])) > div:first-child {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.card-banner-btn-mark):not(:has(div[data-testid="stHorizontalBlock"])) .element-container:has(.card-banner-btn-mark),
+div[data-testid="stHorizontalBlock"]:has(.card-banner-btn-mark):not(:has(div[data-testid="stHorizontalBlock"])) [data-testid="stElementContainer"]:has(.card-banner-btn-mark) {
+  display: none !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.card-banner-btn-mark):not(:has(div[data-testid="stHorizontalBlock"])) .stButton {
+  width: 100% !important;
+  margin: 0 !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.card-banner-btn-mark):not(:has(div[data-testid="stHorizontalBlock"])) .stButton > button,
+div[data-testid="stHorizontalBlock"]:has(.card-banner-btn-mark):not(:has(div[data-testid="stHorizontalBlock"])) .stButton > button[kind="primary"],
+div[data-testid="stHorizontalBlock"]:has(.card-banner-btn-mark):not(:has(div[data-testid="stHorizontalBlock"])) .stButton > button[data-testid="baseButton-primary"] {
+  font-size: 0.72rem !important;
+  font-weight: 600 !important;
+  padding: 0.4rem 0.45rem !important;
+  min-height: 0 !important;
+  height: 2.1rem !important;
+  border-radius: 0.55rem !important;
+  white-space: nowrap !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  line-height: 1.15 !important;
+}
+
+.damoa-badge {
+  display: inline-block;
+  background: rgba(15,122,75,0.12);
+  color: #0f7a4b;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.choice-ok { background: #e8f7ee; border-left: 4px solid #0f7a4b; padding: 0.75rem 0.9rem; margin: 0.35rem 0; border-radius: 0.55rem; color:#132238; }
+.choice-bad { background: #fdecec; border-left: 4px solid #c0392b; padding: 0.75rem 0.9rem; margin: 0.35rem 0; border-radius: 0.55rem; color:#132238; }
+.choice-plain { background: #f4f7fb; border-left: 4px solid #d7e0ea; padding: 0.75rem 0.9rem; margin: 0.35rem 0; border-radius: 0.55rem; color:#132238; }
+
+.panel {
+  border: 1px solid #d7e0ea;
+  background: #f4f7fb;
+  border-radius: 1rem;
+  padding: 1.2rem 1.25rem;
+  margin: 0.55rem 0 0.85rem;
+}
+
+.panel-navy {
+  border: 1px solid rgba(11,42,74,0.2);
+  background: rgba(11,42,74,0.05);
+  border-radius: 1rem;
+  padding: 1.2rem 1.25rem;
+  margin: 0.85rem 0 1rem;
+}
+
+.resume {
+  border: 1px solid #c9a227;
+  background: rgba(201,162,39,0.12);
+  border-radius: 1rem;
+  padding: 1rem 1.2rem;
+  margin: 1rem 0;
+}
+
+.section-label { color:#5b6b7c; font-size:0.9rem; margin:0; }
+.section-title { color:#0b2a4a; font-size:1.25rem; font-weight:700; margin:0.35rem 0 0; }
+.section-desc { color:#5b6b7c; font-size:0.92rem; line-height:1.65; margin:0.45rem 0 0; }
+
+.recent-heading {
+  margin: 1.4rem 0 0.5rem !important;
+  color: #0b2a4a;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.recent-empty {
+  margin: 0.2rem 0 0.4rem !important;
+  color: #5b6b7c;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.recent-inline {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.recent-title {
+  color: #0b2a4a;
+  font-weight: 600;
+  margin: 0 !important;
+  font-size: 0.92rem;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.recent-meta {
+  color: #5b6b7c;
+  font-size: 0.78rem;
+  margin: 0.1rem 0 0 !important;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.recent-score {
+  color: #0b2a4a;
+  font-weight: 700;
+  font-size: 0.92rem;
+  margin: 0 !important;
+  text-align: right;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+/* 최근 학습 현황: 제목 / 점수 / 결과 한 줄 */
+div[data-testid="stHorizontalBlock"]:has(.recent-inline):not(:has(.auth-left)) {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+  gap: 0.45rem !important;
+  margin: 0.35rem 0 !important;
+  padding: 0.7rem 0.85rem !important;
+  border: 1px solid #d7e0ea !important;
+  border-radius: 0.85rem !important;
+  background: #fff !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.recent-inline):not(:has(.auth-left)) > div {
+  min-width: 0 !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.recent-inline):not(:has(.auth-left)) > div:first-child {
+  flex: 1 1 auto !important;
+  width: auto !important;
+  max-width: none !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.recent-inline):not(:has(.auth-left)) > div:nth-child(2),
+div[data-testid="stHorizontalBlock"]:has(.recent-inline):not(:has(.auth-left)) > div:last-child {
+  flex: 0 0 auto !important;
+  width: auto !important;
+  max-width: none !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.recent-inline):not(:has(.auth-left)) [data-testid="stMarkdownContainer"],
+div[data-testid="stHorizontalBlock"]:has(.recent-inline):not(:has(.auth-left)) [data-testid="stMarkdownContainer"] p {
+  margin: 0 !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.recent-inline):not(:has(.auth-left)) .stButton {
+  margin: 0 !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.recent-inline):not(:has(.auth-left)) .stButton > button,
+div[data-testid="stHorizontalBlock"]:has(.recent-inline):not(:has(.auth-left)) .stButton > button[kind="secondary"],
+div[data-testid="stHorizontalBlock"]:has(.recent-inline):not(:has(.auth-left)) .stButton > button[data-testid="baseButton-secondary"] {
+  font-size: 0.78rem !important;
+  font-weight: 600 !important;
+  padding: 0.4rem 0.7rem !important;
+  min-height: 0 !important;
+  height: 2rem !important;
+  border-radius: 0.55rem !important;
+  white-space: nowrap !important;
+  width: auto !important;
+}
+.exam-top {
+  display:flex;
+  justify-content:space-between;
+  gap:1rem;
+  align-items:flex-start;
+  margin-bottom: 0.8rem;
+}
+
+.timer-pill {
+  background:#0b2a4a;
+  color:#fff;
+  border-radius:999px;
+  padding:0.45rem 0.9rem;
+  font-weight:700;
+  font-size:0.92rem;
+  white-space:nowrap;
+}
+
+.q-stem { color:#132238; font-size:1.05rem; line-height:1.7; margin:0.4rem 0 0.9rem; font-weight:600; }
+
+.q-stem-wrap {
+  margin: 0.4rem 0 0.9rem;
+}
+
+.q-stem-wrap .q-stem {
+  margin: 0 0 0.85rem;
+}
+
+.q-stem-box {
+  border: 2px solid #0b2a4a;
+  background: #f8fafc;
+  padding: 1rem 1.1rem;
+  box-sizing: border-box;
+}
+
+.q-stem-box ul {
+  margin: 0 !important;
+  padding: 0 !important;
+  list-style: none !important;
+}
+
+.q-stem-box li {
+  margin: 0 0 0.75rem !important;
+  padding: 0 !important;
+  color: #132238;
+  font-size: 0.98rem;
+  line-height: 1.7;
+}
+
+.q-stem-box li:last-child {
+  margin-bottom: 0 !important;
+}
+
+/* 틀린 문제만 보기 + 주제별 출제 현황 한 줄 */
+div[data-testid="stHorizontalBlock"]:has(.result-filter-row):not(:has(.auth-left)) {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+  gap: 0.55rem !important;
+  margin: 0.55rem 0 0.35rem !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.result-filter-row):not(:has(.auth-left)) > div {
+  flex: 1 1 0 !important;
+  width: 50% !important;
+  min-width: 0 !important;
+  max-width: 50% !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.result-filter-row):not(:has(.auth-left)) .element-container:has(.result-filter-row),
+div[data-testid="stHorizontalBlock"]:has(.result-filter-row):not(:has(.auth-left)) [data-testid="stElementContainer"]:has(.result-filter-row) {
+  display: none !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.result-filter-row):not(:has(.auth-left)) [data-testid="stCheckbox"],
+div[data-testid="stHorizontalBlock"]:has(.result-filter-row):not(:has(.auth-left)) label {
+  min-height: 0 !important;
+  font-size: 0.88rem !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.result-filter-row):not(:has(.auth-left)) .stButton {
+  margin: 0 !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.result-filter-row):not(:has(.auth-left)) .stButton > button {
+  font-size: 0.82rem !important;
+  font-weight: 600 !important;
+  padding: 0.45rem 0.55rem !important;
+  min-height: 0 !important;
+  height: 2.35rem !important;
+  border-radius: 0.65rem !important;
+  white-space: nowrap !important;
+}
+
+.topic-mix-panel {
+  margin: 0.35rem 0 0.85rem;
+  padding: 0.85rem 0.95rem;
+  border: 1px solid #d7e0ea;
+  border-radius: 0.85rem;
+  background: #f4f7fb;
+}
+
+.topic-mix-list {
+  list-style: none !important;
+  margin: 0.75rem 0 0 !important;
+  padding: 0 !important;
+}
+
+.topic-mix-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid #e4ebf2;
+  color: #132238;
+  font-size: 0.92rem;
+  line-height: 1.4;
+}
+
+.topic-mix-list li:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.topic-mix-list .mix-name {
+  font-weight: 600;
+  color: #0b2a4a;
+  min-width: 0;
+}
+
+.topic-mix-list .mix-count {
+  flex: 0 0 auto;
+  color: #5b6b7c;
+  font-size: 0.88rem;
+  white-space: nowrap;
+}
+
+.result-stat {
+  border: 1px solid #d7e0ea;
+  background: #f4f7fb;
+  border-radius: 0.7rem;
+  padding: 0.55rem 0.5rem;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+}
+
+.result-stat .num {
+  color: #0b2a4a;
+  font-size: 0.95rem;
+  font-weight: 800;
+  margin: 0;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.result-stat .lbl {
+  color: #5b6b7c;
+  font-size: 0.72rem;
+  margin: 0;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+/* 채점 결과 통계 3칸: 한 줄 + 컴팩트 */
+div[data-testid="stHorizontalBlock"]:has(.result-stat):not(:has(.auth-left)) {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  gap: 0.4rem !important;
+  align-items: stretch !important;
+  margin: 0.55rem 0 0.75rem !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.result-stat):not(:has(.auth-left)) > div {
+  flex: 1 1 0 !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.result-stat):not(:has(.auth-left)) [data-testid="stMarkdownContainer"],
+div[data-testid="stHorizontalBlock"]:has(.result-stat):not(:has(.auth-left)) [data-testid="stMarkdownContainer"] p {
+  margin: 0 !important;
+}
+
+/* 결과 하단 액션 버튼 한 줄 */
+div[data-testid="stHorizontalBlock"]:has(.result-actions-mark):not(:has(.auth-left)) {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  gap: 0.4rem !important;
+  align-items: stretch !important;
+  margin: 0.75rem 0 0.35rem !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.result-actions-mark):not(:has(.auth-left)) > div {
+  flex: 1 1 0 !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.result-actions-mark):not(:has(.auth-left)) .element-container:has(.result-actions-mark),
+div[data-testid="stHorizontalBlock"]:has(.result-actions-mark):not(:has(.auth-left)) [data-testid="stElementContainer"]:has(.result-actions-mark) {
+  display: none !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.result-actions-mark):not(:has(.auth-left)) .stButton {
+  width: 100% !important;
+  margin: 0 !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.result-actions-mark):not(:has(.auth-left)) .stButton > button,
+div[data-testid="stHorizontalBlock"]:has(.result-actions-mark):not(:has(.auth-left)) .stButton > button[kind="secondary"],
+div[data-testid="stHorizontalBlock"]:has(.result-actions-mark):not(:has(.auth-left)) .stButton > button[data-testid="baseButton-secondary"],
+div[data-testid="stHorizontalBlock"]:has(.result-actions-mark):not(:has(.auth-left)) .stButton > button[kind="primary"],
+div[data-testid="stHorizontalBlock"]:has(.result-actions-mark):not(:has(.auth-left)) .stButton > button[data-testid="baseButton-primary"] {
+  font-size: 0.72rem !important;
+  font-weight: 600 !important;
+  padding: 0.45rem 0.35rem !important;
+  min-height: 0 !important;
+  height: 2.35rem !important;
+  border-radius: 0.6rem !important;
+  white-space: nowrap !important;
+  width: 100% !important;
+  line-height: 1.15 !important;
+}
+
+/* 주제 선택: 학습/시험/홈 한 줄 */
+div[data-testid="stHorizontalBlock"]:has(.topics-chips-mark):not(:has(.auth-left)) {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  gap: 0.35rem !important;
+  align-items: stretch !important;
+  margin: 0.55rem 0 0.75rem !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.topics-chips-mark):not(:has(.auth-left)) > div {
+  flex: 1 1 0 !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.topics-chips-mark):not(:has(.auth-left)) .element-container:has(.topics-chips-mark),
+div[data-testid="stHorizontalBlock"]:has(.topics-chips-mark):not(:has(.auth-left)) [data-testid="stElementContainer"]:has(.topics-chips-mark) {
+  display: none !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.topics-chips-mark):not(:has(.auth-left)) .stButton {
+  width: 100% !important;
+  margin: 0 !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.topics-chips-mark):not(:has(.auth-left)) .stButton > button,
+div[data-testid="stHorizontalBlock"]:has(.topics-chips-mark):not(:has(.auth-left)) .stButton > button[kind="secondary"],
+div[data-testid="stHorizontalBlock"]:has(.topics-chips-mark):not(:has(.auth-left)) .stButton > button[data-testid="baseButton-secondary"],
+div[data-testid="stHorizontalBlock"]:has(.topics-chips-mark):not(:has(.auth-left)) .stButton > button[kind="primary"],
+div[data-testid="stHorizontalBlock"]:has(.topics-chips-mark):not(:has(.auth-left)) .stButton > button[data-testid="baseButton-primary"] {
+  font-size: 0.75rem !important;
+  font-weight: 600 !important;
+  padding: 0.4rem 0.35rem !important;
+  min-height: 0 !important;
+  height: 2.15rem !important;
+  border-radius: 0.55rem !important;
+  white-space: nowrap !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  line-height: 1.2 !important;
+}
+
+/* 시험: 이전 / 홈으로 작은 버튼 */
+div[data-testid="stHorizontalBlock"]:has(.exam-nav-side-mark):not(:has(.auth-left)) {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  gap: 0.35rem !important;
+  align-items: stretch !important;
+  margin: 0.35rem 0 0.15rem !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.exam-nav-side-mark):not(:has(.auth-left)) > div {
+  flex: 1 1 0 !important;
+  width: 50% !important;
+  min-width: 0 !important;
+  max-width: 50% !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.exam-nav-side-mark):not(:has(.auth-left)) .element-container:has(.exam-nav-side-mark),
+div[data-testid="stHorizontalBlock"]:has(.exam-nav-side-mark):not(:has(.auth-left)) [data-testid="stElementContainer"]:has(.exam-nav-side-mark) {
+  display: none !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.exam-nav-side-mark):not(:has(.auth-left)) .stButton {
+  width: 100% !important;
+  margin: 0 !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.exam-nav-side-mark):not(:has(.auth-left)) .stButton > button,
+div[data-testid="stHorizontalBlock"]:has(.exam-nav-side-mark):not(:has(.auth-left)) .stButton > button[kind="secondary"],
+div[data-testid="stHorizontalBlock"]:has(.exam-nav-side-mark):not(:has(.auth-left)) .stButton > button[data-testid="baseButton-secondary"] {
+  font-size: 0.75rem !important;
+  font-weight: 600 !important;
+  padding: 0.35rem 0.5rem !important;
+  min-height: 0 !important;
+  height: 2rem !important;
+  border-radius: 0.55rem !important;
+  white-space: nowrap !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  line-height: 1.2 !important;
+}
+
+.review-card {
+  border:1px solid #d7e0ea;
+  border-radius:1rem;
+  padding:1rem 1.1rem;
+  margin:0.75rem 0;
+  background:#fff;
+}
+
+.stTextInput label, .stPasswordInput label {
+  color: var(--ink) !important;
+  font-weight: 500 !important;
+  font-size: 0.92rem !important;
+}
+
+.stTextInput input, .stPasswordInput input, div[data-baseweb="input"] input {
+  border-radius: 0.85rem !important;
+  border: 1px solid var(--line) !important;
+  padding: 0.85rem 1rem !important;
+  background: #fff !important;
+  color: var(--ink) !important;
+}
+
+.stTextInput input:focus, .stPasswordInput input:focus {
+  border-color: var(--steel) !important;
+  box-shadow: 0 0 0 2px rgba(31,78,121,0.25) !important;
+}
+
+.stButton > button {
+  border-radius: 0.85rem !important;
+  padding: 0.75rem 1rem !important;
+  font-weight: 600 !important;
+  border: 1px solid transparent !important;
+}
+
+.stButton > button[kind="primary"],
+.stButton > button[data-testid="baseButton-primary"] {
+  background: var(--navy) !important;
+  color: #fff !important;
+}
+
+.stButton > button[kind="primary"]:hover,
+.stButton > button[data-testid="baseButton-primary"]:hover {
+  background: var(--navy-deep) !important;
+}
+
+.stButton > button[kind="secondary"],
+.stButton > button[data-testid="baseButton-secondary"] {
+  background: transparent !important;
+  color: var(--steel) !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0.15rem 0 !important;
+  width: auto !important;
+  min-height: auto !important;
+  font-weight: 700 !important;
+  justify-content: flex-start !important;
+}
+
+.stButton > button[kind="secondary"]:hover,
+.stButton > button[data-testid="baseButton-secondary"]:hover {
+  color: var(--navy) !important;
+  background: transparent !important;
+  text-decoration: underline !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.auth-left) {
+  gap: 0 !important;
+  border-radius: 1.5rem !important;
+  overflow: hidden !important;
+  border: 1px solid rgba(255,255,255,0.15) !important;
+  background: #fff !important;
+  box-shadow: 0 30px 80px rgba(0,0,0,0.35) !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.auth-left) > div:first-child {
+  padding: 0 !important;
+  background: transparent !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.auth-left) > div:last-child {
+  padding: 2rem 1.8rem 1.6rem !important;
+  background: #fff !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(.auth-left) [data-testid="stMarkdownContainer"] {
+  margin-bottom: 0 !important;
+}
+
+.auth-left { border-radius: 0 !important; }
+
+.app-shell .block-container,
+body.app-mode .block-container {
+  max-width: 960px !important;
+  width: min(960px, calc(100vw - 1.5rem)) !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  background: rgba(255,255,255,0.97) !important;
+  border-radius: 1.5rem !important;
+  border: 1px solid rgba(255,255,255,0.15) !important;
+  box-shadow: 0 30px 80px rgba(0,0,0,0.35) !important;
+  padding: 2rem 2rem 2.4rem !important;
+  box-sizing: border-box !important;
+}
+
+@media (max-width: 900px) {
+  .block-container,
+  .app-shell .block-container,
+  body.app-mode .block-container {
+    width: calc(100vw - 1.2rem) !important;
+    max-width: calc(100vw - 1.2rem) !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+    padding-top: 0.9rem !important;
+    padding-bottom: 0.9rem !important;
+    padding-left: 0.9rem !important;
+    padding-right: 0.9rem !important;
+  }
+
+  div[data-testid="stHorizontalBlock"]:has(.auth-left) > div:first-child {
+    display: none !important;
+    width: 0 !important;
+    min-width: 0 !important;
+    flex: 0 0 0 !important;
+  }
+
+  div[data-testid="stHorizontalBlock"]:has(.auth-left) > div:last-child {
+    width: 100% !important;
+    flex: 1 1 100% !important;
+    padding: 1.1rem 0.95rem 0.9rem !important;
+  }
+
+  .auth-brand-link {
+    font-size: 0.78rem !important;
+    line-height: 1.35 !important;
+  }
+
+  .auth-title {
+    font-size: 1.45rem !important;
+    margin-top: 0.35rem !important;
+  }
+
+  .auth-sub {
+    margin: 0.25rem 0 0.65rem !important;
+    font-size: 0.8rem !important;
+    line-height: 1.4 !important;
+  }
+
+  .email-domain-mark {
+    font-size: 0.8rem !important;
+    padding: 0 0.7rem !important;
+    height: 2.75rem !important;
+    min-height: 2.75rem !important;
+    min-width: 6.8rem !important;
+  }
+
+  div[data-testid="stHorizontalBlock"]:has(.email-domain-mark):not(:has(.auth-left)),
+  div[data-testid="stHorizontalBlock"]:has(.email-domain-mark):not(:has(.auth-left)) > div,
+  div[data-testid="stHorizontalBlock"]:has(.email-domain-mark):not(:has(.auth-left)) input,
+  div[data-testid="stHorizontalBlock"]:has(.email-domain-mark):not(:has(.auth-left)) [data-testid="stTextInput"],
+  div[data-testid="stHorizontalBlock"]:has(.email-domain-mark):not(:has(.auth-left)) [data-testid="stTextInput"] > div {
+    min-height: 2.75rem !important;
+    height: 2.75rem !important;
+  }
+
+  div[data-testid="stHorizontalBlock"]:has(.email-domain-mark):not(:has(.auth-left)) input {
+    line-height: 2.75rem !important;
+    font-size: 0.875rem !important;
+  }
+
+  .stTextInput, .stPasswordInput { margin-bottom: 0.15rem !important; }
+
+  .stButton > button[kind="primary"],
+  .stButton > button[data-testid="baseButton-primary"] {
+    padding: 0.65rem 1rem !important;
+  }
+}
