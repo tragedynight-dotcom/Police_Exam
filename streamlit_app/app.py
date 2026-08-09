@@ -1203,7 +1203,7 @@ def app_shell_css():
           }
           
           /* ================================================== */
-          /* 네비게이션 3등분(이전/다음/홈으로) 강제 CSS */
+          /* 네비게이션 3등분(이전/다음/홈으로) 강제 CSS (모바일 레이아웃 고정) */
           /* ================================================== */
           div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark),
           div[data-testid='stHorizontalBlock']:has(.result-actions-mark) {
@@ -1214,10 +1214,17 @@ def app_shell_css():
             align-items: stretch !important;
             margin: 0.35rem 0 0.15rem !important;
           }
+          /* 모든 사이즈에서 무조건 세로 나열을 방지하고 가로 3등분 처리 */
+          @media (max-width: 1024px) {
+            div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark),
+            div[data-testid='stHorizontalBlock']:has(.result-actions-mark) {
+                flex-direction: row !important;
+            }
+          }
           div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) > div,
           div[data-testid='stHorizontalBlock']:has(.result-actions-mark) > div,
-          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) [data-testid="column"],
-          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) [data-testid="column"] {
+          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) > div[data-testid="column"],
+          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) > div[data-testid="column"] {
             flex: 1 1 0 !important;
             width: 33.33% !important;
             min-width: 0 !important;
@@ -1306,7 +1313,6 @@ def app_shell_css():
         """
         <script>
         (function() {
-            // 스트림릿의 iframe을 넘어 실제 브라우저 화면(부모 창)을 정확히 타겟팅합니다.
             let win = window.parent || window;
             let doc = win.document;
 
@@ -1337,12 +1343,12 @@ def app_shell_css():
                         osc.connect(gain);
                         gain.connect(actx.destination);
                         
-                        // 더 명확하고 잘 들리는 타격감 있는 소리로 주파수 튜닝
+                        // 타격감 있는 소리로 주파수 튜닝
                         osc.type = 'sine';
                         osc.frequency.setValueAtTime(900, actx.currentTime);
                         osc.frequency.exponentialRampToValueAtTime(300, actx.currentTime + 0.08);
                         
-                        // 기존 볼륨 0.15 -> 0.8 로 5배 이상 대폭 상향 (모바일 환경 고려)
+                        // 볼륨 대폭 상향
                         gain.gain.setValueAtTime(0.8, actx.currentTime);
                         gain.gain.exponentialRampToValueAtTime(0.01, actx.currentTime + 0.08);
                         
@@ -1351,7 +1357,7 @@ def app_shell_css():
                     } catch(e) {}
                 }
                 
-                // 버튼이나 보기 클릭 시 부모 창에서 소리 발생 감지
+                // 버튼이나 보기 클릭 시 소리 발생
                 doc.addEventListener('click', function(e) {
                     let target = e.target;
                     let isButton = target.closest('button');
@@ -1362,7 +1368,7 @@ def app_shell_css():
                 }, true);
             }
 
-            // 2. 모바일 하단 3버튼 레이아웃 강제 고정 (스트림릿의 모바일 CSS 무시)
+            // 2. 모바일 하단 3버튼 레이아웃 강제 고정 
             setInterval(function() {
                 var marks = doc.querySelectorAll('.exam-nav-side-mark, .result-actions-mark');
                 marks.forEach(function(mark) {
@@ -1375,6 +1381,7 @@ def app_shell_css():
                             col.style.setProperty('width', '33.33%', 'important');
                             col.style.setProperty('min-width', '33.33%', 'important');
                             col.style.setProperty('flex', '1 1 0', 'important');
+                            col.style.setProperty('display', 'block', 'important');
                         });
                     }
                 });
@@ -1828,10 +1835,11 @@ def view_exam():
             if feedback.get("source"):
                 st.caption(f"출처: {feedback['source']}")
 
-    st.markdown('<div class="exam-nav-side-mark"></div>', unsafe_allow_html=True)
+    # ----------------- 마커를 [이전] 버튼과 함께 배치하여 3개 버튼이 모바일에서 완벽하게 한 줄로 나오도록 수정 -----------------
     nav_l, nav_m, nav_r = st.columns(3, gap="small")
     
     with nav_l:
+        st.markdown('<div class="exam-nav-side-mark"></div>', unsafe_allow_html=True)
         if st.button("이전", disabled=idx <= 0, use_container_width=True, type="secondary", key="exam_prev"):
             st.session_state.q_index = idx - 1
             st.session_state.feedback = None
