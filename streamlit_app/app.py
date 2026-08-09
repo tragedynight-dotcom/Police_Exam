@@ -63,7 +63,7 @@ def init_state():
         "reset_email": "",
         "topics_mode": "immediate",
         "attempt_id": None,
-        "q_index": -1,  # 새로 진입함을 구분하기 위해 -1로 초기화
+        "q_index": -1,
         "feedback": None,
         "result_wrong_only": False,
         "result_show_topic_mix": False,
@@ -78,7 +78,7 @@ def init_state():
 
 
 def restore_user_from_url():
-    """URL의 query_params에서 토큰을 읽어와 새로고침 후에도 로그인 세션을 복구한다."""
+    """URL의 query_params에서 토큰을 읽어와 새로고침 후에도 로그인 세션을 강력하게 복구한다."""
     if st.session_state.get("_force_logout"):
         st.session_state.user = None
         if "auth" not in st.query_params:
@@ -86,6 +86,13 @@ def restore_user_from_url():
         return
 
     if st.session_state.get("user"):
+        # 세션에 유저가 있다면 URL 토큰도 항상 최신으로 동기화
+        try:
+            token = make_auth_token(st.session_state.user["id"])
+            if st.query_params.get("auth") != token:
+                st.query_params["auth"] = token
+        except Exception:
+            pass
         return
 
     token = st.query_params.get("auth")
@@ -109,7 +116,7 @@ def login_success(user: dict, view: str = "dashboard", **kwargs):
     st.session_state._force_logout = False
     st.session_state.user = user
     token = make_auth_token(user["id"])
-    st.query_params["auth"] = token  # URL 파라미터에 토큰 세팅
+    st.query_params["auth"] = token  # URL 파라미터에 토큰 영구 고정
     go(view, **kwargs)
 
 
@@ -117,12 +124,11 @@ def logout():
     st.session_state.user = None
     st.session_state._force_logout = True
     if "auth" in st.query_params:
-        del st.query_params["auth"]  # URL 파라미터 제거
+        del st.query_params["auth"]
     go("login")
 
 
 def reset_result_filters():
-    """결과 화면의 토글/패널 상태를 초기화한다."""
     st.session_state.result_wrong_only = False
     st.session_state.result_show_topic_mix = False
 
@@ -160,7 +166,6 @@ def request_scroll_to(selector: str, block: str = "center"):
 
 
 def flush_scroll_top():
-    """화면 전환/답안 채점 후 스크롤 위치를 맞춘다."""
     target = st.session_state.pop("_scroll_to", None)
     to_top = st.session_state.pop("_scroll_top", False)
     if not target and not to_top:
@@ -277,7 +282,6 @@ def flush_scroll_top():
 
 
 def stem_html(stem: str) -> str:
-    """질문 + (있으면) ㄱ/㉠ 지문 박스를 HTML로 렌더한다."""
     stem = strip_difficulty_marker(stem or "")
     prompt, items = split_boxed_stem(stem)
     if not items:
@@ -1203,7 +1207,7 @@ def app_shell_css():
           }
           
           /* ================================================== */
-          /* 네비게이션 3등분(이전/다음/홈으로) 강제 CSS (모바일 레이아웃 고정) */
+          /* 네비게이션 3등분(이전/다음/홈으로) 강제 1줄 고정 CSS */
           /* ================================================== */
           div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark),
           div[data-testid='stHorizontalBlock']:has(.result-actions-mark) {
@@ -1214,17 +1218,14 @@ def app_shell_css():
             align-items: stretch !important;
             margin: 0.35rem 0 0.15rem !important;
           }
-          /* 모든 사이즈에서 무조건 세로 나열을 방지하고 가로 3등분 처리 */
           @media (max-width: 1024px) {
             div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark),
             div[data-testid='stHorizontalBlock']:has(.result-actions-mark) {
                 flex-direction: row !important;
             }
           }
-          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) > div,
-          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) > div,
-          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) > div[data-testid="column"],
-          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) > div[data-testid="column"] {
+          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) > [data-testid="column"],
+          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) > [data-testid="column"] {
             flex: 1 1 0 !important;
             width: 33.33% !important;
             min-width: 0 !important;
@@ -1232,7 +1233,6 @@ def app_shell_css():
             display: block !important;
           }
           
-          /* 마커 감추기 */
           div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) .element-container:has(.exam-nav-side-mark),
           div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) [data-testid='stElementContainer']:has(.exam-nav-side-mark),
           div[data-testid='stHorizontalBlock']:has(.result-actions-mark) .element-container:has(.result-actions-mark),
@@ -1243,7 +1243,6 @@ def app_shell_css():
             padding: 0 !important;
           }
           
-          /* 버튼 스타일 통일 */
           div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) .stButton,
           div[data-testid='stHorizontalBlock']:has(.result-actions-mark) .stButton {
             width: 100% !important;
@@ -1308,7 +1307,7 @@ def app_shell_css():
         """
     )
     
-    # --------- 클릭 효과음 (부모 창 완벽 지정) 및 모바일 3버튼 레이아웃 강제 자바스크립트 ---------
+    # --------- 오디오 및 모바일 버튼 1줄 고정 JS ---------
     components.html(
         """
         <script>
@@ -1316,7 +1315,6 @@ def app_shell_css():
             let win = window.parent || window;
             let doc = win.document;
 
-            // 1. 오디오 처리 (모바일 보안 해제 및 볼륨 업그레이드)
             if (!win.__audio_click_injected) {
                 win.__audio_click_injected = true;
                 let actx = null;
@@ -1329,7 +1327,6 @@ def app_shell_css():
                     if (actx && actx.state === 'suspended') actx.resume();
                 }
                 
-                // 모바일 브라우저는 사용자가 화면에 손을 대는 첫 순간에만 오디오 권한을 내어줍니다.
                 doc.addEventListener('touchstart', initAudio, { once: true, capture: true });
                 doc.addEventListener('click', initAudio, { once: true, capture: true });
 
@@ -1337,18 +1334,15 @@ def app_shell_css():
                     try {
                         initAudio();
                         if (!actx) return;
-                        
                         const osc = actx.createOscillator();
                         const gain = actx.createGain();
                         osc.connect(gain);
                         gain.connect(actx.destination);
                         
-                        // 타격감 있는 소리로 주파수 튜닝
                         osc.type = 'sine';
                         osc.frequency.setValueAtTime(900, actx.currentTime);
                         osc.frequency.exponentialRampToValueAtTime(300, actx.currentTime + 0.08);
                         
-                        // 볼륨 대폭 상향
                         gain.gain.setValueAtTime(0.8, actx.currentTime);
                         gain.gain.exponentialRampToValueAtTime(0.01, actx.currentTime + 0.08);
                         
@@ -1357,7 +1351,6 @@ def app_shell_css():
                     } catch(e) {}
                 }
                 
-                // 버튼이나 보기 클릭 시 소리 발생
                 doc.addEventListener('click', function(e) {
                     let target = e.target;
                     let isButton = target.closest('button');
@@ -1368,7 +1361,7 @@ def app_shell_css():
                 }, true);
             }
 
-            // 2. 모바일 하단 3버튼 레이아웃 강제 고정 
+            // 하단 3버튼 가로 1줄 고정 실시간 보정
             setInterval(function() {
                 var marks = doc.querySelectorAll('.exam-nav-side-mark, .result-actions-mark');
                 marks.forEach(function(mark) {
@@ -1385,7 +1378,7 @@ def app_shell_css():
                         });
                     }
                 });
-            }, 500);
+            }, 300);
         })();
         </script>
         """,
@@ -1835,11 +1828,10 @@ def view_exam():
             if feedback.get("source"):
                 st.caption(f"출처: {feedback['source']}")
 
-    # ----------------- 마커를 [이전] 버튼과 함께 배치하여 3개 버튼이 모바일에서 완벽하게 한 줄로 나오도록 수정 -----------------
+    st.markdown('<div class="exam-nav-side-mark"></div>', unsafe_allow_html=True)
     nav_l, nav_m, nav_r = st.columns(3, gap="small")
     
     with nav_l:
-        st.markdown('<div class="exam-nav-side-mark"></div>', unsafe_allow_html=True)
         if st.button("이전", disabled=idx <= 0, use_container_width=True, type="secondary", key="exam_prev"):
             st.session_state.q_index = idx - 1
             st.session_state.feedback = None
