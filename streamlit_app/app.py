@@ -1328,7 +1328,7 @@ def app_shell_css():
         </style>
         """
     )
-    # --------- 클릭 효과음(저작권 프리) JS 볼륨 및 톤 개선 ---------
+    # --------- 클릭 효과음(저작권 프리) JS 모바일 권한 및 볼륨 개선 ---------
     components.html(
         """
         <script>
@@ -1338,21 +1338,33 @@ def app_shell_css():
                 win.__audio_click_injected = true;
                 let AudioCtx = win.AudioContext || win.webkitAudioContext;
                 let actx = null;
+                
+                // 1. 모바일 브라우저 오디오 잠금 해제 (최초 터치 시)
+                function initAudio() {
+                    if (!actx) actx = new AudioCtx();
+                    if (actx.state === 'suspended') actx.resume();
+                }
+                
+                // 모바일 환경을 위해 터치와 클릭 이벤트 모두에서 권한을 얻어냅니다.
+                ['touchstart', 'touchend', 'click'].forEach(evt => {
+                    win.document.addEventListener(evt, initAudio, { once: true, capture: true });
+                });
+
+                // 2. 실제 클릭 소리 재생
                 function playClick() {
                     try {
-                        if (!actx) actx = new AudioCtx();
-                        if (actx.state === 'suspended') actx.resume();
+                        initAudio();
                         const osc = actx.createOscillator();
                         const gain = actx.createGain();
                         osc.connect(gain);
                         gain.connect(actx.destination);
                         
-                        // 더 명확하고 잘 들리는 소리를 위해 주파수와 볼륨 대폭 증가
+                        // 더 명확하고 잘 들리는 소리를 위해 주파수 대폭 증가
                         osc.type = 'sine';
                         osc.frequency.setValueAtTime(900, actx.currentTime);
                         osc.frequency.exponentialRampToValueAtTime(300, actx.currentTime + 0.08);
                         
-                        // 볼륨(gain)을 0.15에서 0.8로 상향 (약 5배)
+                        // 볼륨(gain)을 0.8로 상향 (모바일 환경 고려)
                         gain.gain.setValueAtTime(0.8, actx.currentTime);
                         gain.gain.exponentialRampToValueAtTime(0.01, actx.currentTime + 0.08);
                         
@@ -1360,6 +1372,8 @@ def app_shell_css():
                         osc.stop(actx.currentTime + 0.08);
                     } catch(e) {}
                 }
+                
+                // 3. 버튼이나 보기 클릭 시 소리 발생
                 win.document.addEventListener('click', function(e) {
                     let target = e.target;
                     let isButton = target.closest('button');
@@ -1507,7 +1521,7 @@ def view_dashboard():
 
     recent = list(recent_attempts(user["id"], limit=3))[:3]
     st.markdown(
-        '<p class="recent-heading">최근 학습 현황</p>',
+        '<p class="recent-heading">최근 학습 완료 현황</p>',
         unsafe_allow_html=True,
     )
     if not recent:
@@ -1818,11 +1832,11 @@ def view_exam():
             if feedback.get("source"):
                 st.caption(f"출처: {feedback['source']}")
 
-    # ----------------- 마커를 Column 안쪽에 배치하여 3개 버튼 모두 동일한 소형 사이즈가 적용되도록 수정 -----------------
+    # ----------------- 가운데 [다음] 버튼도 양옆 버튼과 똑같은 디자인(secondary)으로 통일 -----------------
+    st.markdown('<div class="exam-nav-side-mark"></div>', unsafe_allow_html=True)
     nav_l, nav_m, nav_r = st.columns(3, gap="small")
     
     with nav_l:
-        st.markdown('<div class="exam-nav-side-mark"></div>', unsafe_allow_html=True)
         if st.button("이전", disabled=idx <= 0, use_container_width=True, type="secondary", key="exam_prev"):
             st.session_state.q_index = idx - 1
             st.session_state.feedback = None
@@ -1831,7 +1845,8 @@ def view_exam():
             
     with nav_m:
         next_label = ("학습 종료" if is_learn else "제출하기") if is_last else "다음"
-        if st.button(next_label, type="primary", use_container_width=True, key="exam_next_mid"):
+        # type="primary" 였던 것을 type="secondary" 로 변경하여 하얀색 바탕에 글씨만 나오도록 수정
+        if st.button(next_label, type="secondary", use_container_width=True, key="exam_next_mid"):
             if is_last:
                 _, qs2 = load_exam(attempt_id, user["id"])
                 unanswered = sum(1 for x in qs2 if x["userAnswer"] is None)
