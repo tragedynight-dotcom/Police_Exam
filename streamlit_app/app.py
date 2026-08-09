@@ -1250,7 +1250,7 @@ def app_shell_css():
             align-items: stretch !important;
             margin: 0.35rem 0 0.15rem !important;
           }
-          /* 이전/다음/홈으로 3등분 처리를 위한 CSS */
+          /* 이전/다음/홈으로 3등분 처리를 위한 CSS 마커 적용 */
           div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) > div {
             flex: 1 1 0 !important;
             width: auto !important;
@@ -1328,7 +1328,7 @@ def app_shell_css():
         </style>
         """
     )
-    # --------- 클릭 효과음(저작권 프리) JS 추가 ---------
+    # --------- 클릭 효과음(저작권 프리) JS 볼륨 및 톤 개선 ---------
     components.html(
         """
         <script>
@@ -1346,13 +1346,18 @@ def app_shell_css():
                         const gain = actx.createGain();
                         osc.connect(gain);
                         gain.connect(actx.destination);
+                        
+                        // 더 명확하고 잘 들리는 소리를 위해 주파수와 볼륨 대폭 증가
                         osc.type = 'sine';
-                        osc.frequency.setValueAtTime(800, actx.currentTime);
-                        osc.frequency.exponentialRampToValueAtTime(300, actx.currentTime + 0.05);
-                        gain.gain.setValueAtTime(0.15, actx.currentTime);
-                        gain.gain.exponentialRampToValueAtTime(0.01, actx.currentTime + 0.05);
+                        osc.frequency.setValueAtTime(900, actx.currentTime);
+                        osc.frequency.exponentialRampToValueAtTime(300, actx.currentTime + 0.08);
+                        
+                        // 볼륨(gain)을 0.15에서 0.8로 상향 (약 5배)
+                        gain.gain.setValueAtTime(0.8, actx.currentTime);
+                        gain.gain.exponentialRampToValueAtTime(0.01, actx.currentTime + 0.08);
+                        
                         osc.start(actx.currentTime);
-                        osc.stop(actx.currentTime + 0.05);
+                        osc.stop(actx.currentTime + 0.08);
                     } catch(e) {}
                 }
                 win.document.addEventListener('click', function(e) {
@@ -1719,7 +1724,6 @@ def view_exam():
         else ""
     )
     
-    # 시간 표시 UI (학습 모드일 땐 '시간 제한 없음', 시험 모드일 땐 실시간 자바스크립트용 ID 부여)
     timer_display = (
         '<div class="timer-pill" style="background: rgba(201, 162, 39, 0.12); color: #c9a227; border-color: rgba(201, 162, 39, 0.3);">시간 제한 없음</div>'
         if is_learn_mode
@@ -1814,11 +1818,11 @@ def view_exam():
             if feedback.get("source"):
                 st.caption(f"출처: {feedback['source']}")
 
-    # ----------------- 네비게이션을 깔끔한 3분할([이전] [다음] [홈으로])로 수정 -----------------
-    st.markdown('<div class="exam-nav-side-mark"></div>', unsafe_allow_html=True)
+    # ----------------- 마커를 Column 안쪽에 배치하여 3개 버튼 모두 동일한 소형 사이즈가 적용되도록 수정 -----------------
     nav_l, nav_m, nav_r = st.columns(3, gap="small")
     
     with nav_l:
+        st.markdown('<div class="exam-nav-side-mark"></div>', unsafe_allow_html=True)
         if st.button("이전", disabled=idx <= 0, use_container_width=True, type="secondary", key="exam_prev"):
             st.session_state.q_index = idx - 1
             st.session_state.feedback = None
@@ -1826,7 +1830,6 @@ def view_exam():
             st.rerun()
             
     with nav_m:
-        # 학습 모드의 마지막 문제면 '학습 종료', 아니면 '제출하기' 또는 '다음' 텍스트만 표시
         next_label = ("학습 종료" if is_learn else "제출하기") if is_last else "다음"
         if st.button(next_label, type="primary", use_container_width=True, key="exam_next_mid"):
             if is_last:
