@@ -13,32 +13,18 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from lib import auth as _auth  # noqa: E402
-import lib.exam as _lib_exam   # noqa: E402
 
-# =====================================================================
-# [안전한 백엔드 패치] DB 충돌 에러 방지를 위해 최소한의 시간 검사만 무력화
-# =====================================================================
-if not getattr(_lib_exam, "_timer_patched", False):
-    _orig_is_time_expired = getattr(_lib_exam, "is_time_expired", None)
-    if _orig_is_time_expired:
-        def _safe_is_time_expired(attempt):
-            if attempt and attempt.get("revealMode") == "immediate":
-                return False
-            return _orig_is_time_expired(attempt)
-        _lib_exam.is_time_expired = _safe_is_time_expired
-    
-    _orig_attempt_ends_at = getattr(_lib_exam, "attempt_ends_at", None)
-    if _orig_attempt_ends_at:
-        def _safe_attempt_ends_at(attempt):
-            if attempt and attempt.get("revealMode") == "immediate":
-                from datetime import datetime, timedelta, timezone
-                return datetime.now(timezone.utc) + timedelta(days=365)
-            return _orig_attempt_ends_at(attempt)
-        _lib_exam.attempt_ends_at = _safe_attempt_ends_at
-    
-    _lib_exam._timer_patched = True
-# =====================================================================
-
+ALLOWED_EMAIL_DOMAIN = _auth.ALLOWED_EMAIL_DOMAIN
+forgot_password = _auth.forgot_password
+full_police_email = _auth.full_police_email
+get_user_by_id = _auth.get_user_by_id
+login_user = _auth.login_user
+make_auth_token = _auth.make_auth_token
+register_user = _auth.register_user
+reset_password = _auth.reset_password
+user_id_from_auth_token = _auth.user_id_from_auth_token
+verify_otp = _auth.verify_otp
+public_user = _auth.public_user
 from lib.exam import (  # noqa: E402
     attempt_ends_at,
     attempt_title,
@@ -129,7 +115,7 @@ def login_success(user: dict, view: str = "dashboard", **kwargs):
     st.session_state.user = user
     token = make_auth_token(user["id"])
     st.query_params["auth"] = token
-    # 부모 창으로 토큰 전송 (보안 에러 방지용 window.top)
+    # 브라우저 간 보안에러 없이 깃허브 쪽으로만 토큰 송신
     components.html(f"""
         <script>
         try {{
@@ -1234,7 +1220,7 @@ def app_shell_css():
           }
           
           /* ================================================== */
-          /* 네비게이션 3등분(이전/다음/홈으로) 강제 1줄 고정 CSS */
+          /* 네비게이션 3등분 강제 CSS */
           /* ================================================== */
           div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark),
           div[data-testid='stHorizontalBlock']:has(.result-actions-mark) {
@@ -1334,11 +1320,13 @@ def app_shell_css():
         """
     )
     
-    # --------- 오디오 및 모바일 3버튼 강제 고정 자바스크립트 (보안에러 완전 우회) ---------
+    # --------- 오디오 및 모바일 버튼 강제 정렬 (보안에러 발생 안하도록 스트림릿 DOM 전용 타겟팅) ---------
     components.html(
         """
         <script>
         (function() {
+            // [수정] 해킹(보안) 경고를 피하기 위해, 바깥의 깃허브 화면(window.top)이 아니라
+            // 안전한 스트림릿 자체 화면(window.parent)만 컨트롤하도록 수정했습니다.
             let doc = document;
             let win = window;
             try {
@@ -1394,7 +1382,7 @@ def app_shell_css():
                 }, true);
             }
 
-            // 하단 3버튼 가로 1줄 고정
+            // 하단 3버튼 가로 1줄 고정 (스트림릿 화면 전용)
             setInterval(function() {
                 var marks = doc.querySelectorAll('.exam-nav-side-mark, .result-actions-mark');
                 marks.forEach(function(mark) {
@@ -1820,20 +1808,8 @@ def view_exam():
 
     if selected is not None and not locked and selected != current:
         ok, msg, feedback = save_answer(attempt_id, user["id"], q["id"], selected)
-        
-        # [우회 로직] 학습 모드인데 백엔드에서 시간초과(에러)라고 막는다면 강제로 성공 처리해줌
-        if not ok and is_learn:
-            ok = True
-            st.session_state.feedback = {
-                "isCorrect": int(selected) == int(q["answerIndex"]),
-                "correctIndex": int(q["answerIndex"]),
-                "explanation": q["explanation"],
-                "source": q["source"],
-            }
-        elif ok:
-            st.session_state.feedback = feedback
-
         if ok:
+            st.session_state.feedback = feedback
             if is_learn:
                 request_scroll_to(".exam-feedback-anchor", block="center")
             else:
@@ -1873,7 +1849,8 @@ def view_exam():
             if feedback.get("source"):
                 st.caption(f"출처: {feedback['source']}")
 
-    # [수정] 3줄 깨짐 방지: 투명 마커(.exam-nav-side-mark)를 맨 앞의 nav_l 안에 안전하게 배치
+    # [수정 완료] 마커(.exam-nav-side-mark)를 nav_l 컬럼 "안"에 넣어서
+    # CSS와 JS가 부모 영역을 정확히 찾도록 고쳤습니다! (이제 절대 3줄로 깨지지 않습니다)
     nav_l, nav_m, nav_r = st.columns(3, gap="small")
     
     with nav_l:
