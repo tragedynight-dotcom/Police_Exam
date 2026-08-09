@@ -11,11 +11,11 @@
     body, html {
       margin: 0; padding: 0; width: 100%; height: 100%;
       overflow: hidden; background-color: #ffffff;
+      overscroll-behavior-y: contain; 
     }
     iframe {
       width: 100%; height: 100%; border: none;
     }
-    /* 인앱 브라우저(네이버/카카오) 안내 배너 디자인 */
     #inapp-guide {
       display: none; position: fixed; bottom: 0; left: 0; width: 100%;
       background-color: #e63946; color: #ffffff; text-align: center;
@@ -27,28 +27,51 @@
   </style>
 </head>
 <body>
-  <!-- 스트림릿 앱 주소가 police-exam으로 적용되었습니다. -->
-  <iframe src="https://police-exam.streamlit.app/?embed=true" allow="clipboard-write; camera; geolocation; fullscreen"></iframe>
+  <iframe id="app-iframe" allow="clipboard-write; camera; geolocation; fullscreen"></iframe>
   
-  <!-- 네이버/카카오 접속 시 하단에 뜨는 안내 배너 -->
   <div id="inapp-guide">
     현재 네이버/카카오 앱에서는 단독 앱 설치가 제한됩니다.<br>
-    우측 하단 메뉴(≡)에서 <b>'홈 화면에 추가'</b>를 선택하여 사용해 주시기 바랍니다.
+    우측 하단 메뉴(≡)에서 <b>'다른 브라우저로 열기'</b> 또는 <b>'홈 화면에 추가'</b>를 선택하여 사용해 주시기 바랍니다.
   </div>
 
   <script>
-    // 접속한 앱이 네이버, 카카오톡, 라인인지 자동으로 감지합니다.
-    var ua = navigator.userAgent.toLowerCase();
-    if(ua.indexOf('naver') > -1 || ua.indexOf('kakaotalk') > -1 || ua.indexOf('line') > -1) {
-      document.getElementById('inapp-guide').style.display = 'block';
+    try {
+      var token = null;
+      try { token = localStorage.getItem('damoa_auth'); } catch(e) {}
+      
+      var targetUrl = "https://police-exam.streamlit.app/?embed=true";
+      var params = new URLSearchParams(window.location.search);
+      var urlAuth = params.get('auth');
+      
+      if (urlAuth) {
+        token = urlAuth;
+        try { localStorage.setItem('damoa_auth', urlAuth); } catch(e) {}
+      }
+      
+      if (token) {
+        targetUrl += "&auth=" + token;
+      }
+      
+      var iframe = document.getElementById('app-iframe');
+      if (iframe) {
+        iframe.src = targetUrl;
+      }
+    } catch (err) {
+      var iframe = document.getElementById('app-iframe');
+      if (iframe) {
+        iframe.src = "https://police-exam.streamlit.app/?embed=true";
+      }
     }
 
-    // 서비스 워커 등록 (앱 설치용)
+    var ua = navigator.userAgent.toLowerCase();
+    if(ua.indexOf('naver') > -1 || ua.indexOf('kakaotalk') > -1 || ua.indexOf('line') > -1) {
+      var guide = document.getElementById('inapp-guide');
+      if(guide) guide.style.display = 'block';
+    }
+
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js').then(reg => {
-          console.log('ServiceWorker 등록 성공');
-        });
+        navigator.serviceWorker.register('sw.js').catch(() => {});
       });
     }
   </script>
