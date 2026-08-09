@@ -160,7 +160,7 @@ def request_scroll_to(selector: str, block: str = "center"):
 
 
 def flush_scroll_top():
-    """화면 전환/답안 채점 후 스크롤 위치를 맞춘다. (CORS 에러 방지 처리 완료)"""
+    """화면 전환/답안 채점 후 스크롤 위치를 맞춘다."""
     target = st.session_state.pop("_scroll_to", None)
     to_top = st.session_state.pop("_scroll_top", False)
     if not target and not to_top:
@@ -186,7 +186,7 @@ def flush_scroll_top():
                   doc = window.parent.document;
                   win = window.parent;
                 }}
-              }} catch (e) {{}} // iframe 보안 제약 무시
+              }} catch (e) {{}} 
               
               const sel = {sel_js};
               const block = {block_js};
@@ -221,7 +221,7 @@ def flush_scroll_top():
               doc = window.parent.document;
               win = window.parent;
             }}
-          }} catch (e) {{}} // iframe 보안 제약 무시
+          }} catch (e) {{}}
 
           function toTop() {{
             const seen = new Set();
@@ -377,7 +377,6 @@ def email_input(label: str = "경찰웹메일 ID", key: str = "email_local") -> 
 
 
 def auth_layout(title: str, subtitle: str | None, body):
-    # 로그인/인증 박스를 화면 수직 정중앙에 배치하는 CSS
     st.html(
         """
         <style>
@@ -1202,47 +1201,12 @@ def app_shell_css():
             margin: 0 !important;
             white-space: nowrap !important;
           }
+          
+          /* ================================================== */
+          /* 네비게이션 3등분(이전/다음/홈으로) 강제 CSS (PC & 모바일 동일) */
+          /* ================================================== */
+          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark),
           div[data-testid='stHorizontalBlock']:has(.result-actions-mark) {
-            display: flex !important;
-            flex-direction: row !important;
-            flex-wrap: nowrap !important;
-            gap: 0.4rem !important;
-            align-items: stretch !important;
-            margin: 0.75rem 0 0.35rem !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) > div {
-            flex: 1 1 0 !important;
-            width: auto !important;
-            min-width: 0 !important;
-            max-width: none !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) .element-container:has(.result-actions-mark),
-          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) [data-testid='stElementContainer']:has(.result-actions-mark) {
-            display: none !important;
-            height: 0 !important;
-            margin: 0 !important;
-            padding: 0 !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) .stButton {
-            width: 100% !important;
-            margin: 0 !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) .stButton > button,
-          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) .stButton > button[kind='secondary'],
-          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) .stButton > button[data-testid='baseButton-secondary'],
-          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) .stButton > button[kind='primary'],
-          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) .stButton > button[data-testid='baseButton-primary'] {
-            font-size: 0.72rem !important;
-            font-weight: 600 !important;
-            padding: 0.45rem 0.35rem !important;
-            min-height: 0 !important;
-            height: 2.35rem !important;
-            border-radius: 0.6rem !important;
-            white-space: nowrap !important;
-            width: 100% !important;
-            line-height: 1.15 !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) {
             display: flex !important;
             flex-direction: row !important;
             flex-wrap: nowrap !important;
@@ -1250,29 +1214,36 @@ def app_shell_css():
             align-items: stretch !important;
             margin: 0.35rem 0 0.15rem !important;
           }
-          /* 이전/다음/홈으로 3등분 처리를 위한 CSS 마커 적용 */
-          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) > div {
+          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) > div,
+          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) > div,
+          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) [data-testid="column"],
+          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) [data-testid="column"] {
             flex: 1 1 0 !important;
-            width: auto !important;
+            width: 33.33% !important;
             min-width: 0 !important;
             max-width: none !important;
+            display: block !important;
           }
+          
+          /* 마커 감추기 */
           div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) .element-container:has(.exam-nav-side-mark),
-          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) [data-testid='stElementContainer']:has(.exam-nav-side-mark) {
+          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) [data-testid='stElementContainer']:has(.exam-nav-side-mark),
+          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) .element-container:has(.result-actions-mark),
+          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) [data-testid='stElementContainer']:has(.result-actions-mark) {
             display: none !important;
             height: 0 !important;
             margin: 0 !important;
             padding: 0 !important;
           }
-          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) .stButton {
+          
+          /* 버튼 스타일 통일 */
+          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) .stButton,
+          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) .stButton {
             width: 100% !important;
             margin: 0 !important;
           }
           div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) .stButton > button,
-          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) .stButton > button[kind='secondary'],
-          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) .stButton > button[data-testid='baseButton-secondary'],
-          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) .stButton > button[kind='primary'],
-          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) .stButton > button[data-testid='baseButton-primary'] {
+          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) .stButton > button {
             font-size: 0.75rem !important;
             font-weight: 600 !important;
             padding: 0.35rem 0.5rem !important;
@@ -1284,6 +1255,7 @@ def app_shell_css():
             box-sizing: border-box !important;
             line-height: 1.2 !important;
           }
+
           div[data-testid='stHorizontalBlock']:has(.topics-chips-mark) {
             display: flex !important;
             flex-direction: row !important;
@@ -1328,43 +1300,45 @@ def app_shell_css():
         </style>
         """
     )
-    # --------- 클릭 효과음(저작권 프리) JS 모바일 권한 및 볼륨 개선 ---------
+    
+    # --------- 클릭 효과음 (모바일 권한 완벽 우회 및 볼륨 5배 증폭) & 3버튼 레이아웃 강제 JS ---------
     components.html(
         """
         <script>
         (function() {
-            let win = window.parent || window;
-            if (!win.__audio_click_injected) {
-                win.__audio_click_injected = true;
-                let AudioCtx = win.AudioContext || win.webkitAudioContext;
+            // 1. 오디오 처리 (모바일 보안 해제 및 볼륨 업그레이드)
+            if (!window.__audio_click_injected) {
+                window.__audio_click_injected = true;
                 let actx = null;
                 
-                // 1. 모바일 브라우저 오디오 잠금 해제 (최초 터치 시)
                 function initAudio() {
-                    if (!actx) actx = new AudioCtx();
-                    if (actx.state === 'suspended') actx.resume();
+                    if (!actx) {
+                        let AudioCtx = window.AudioContext || window.webkitAudioContext;
+                        if (AudioCtx) actx = new AudioCtx();
+                    }
+                    if (actx && actx.state === 'suspended') actx.resume();
                 }
                 
-                // 모바일 환경을 위해 터치와 클릭 이벤트 모두에서 권한을 얻어냅니다.
-                ['touchstart', 'touchend', 'click'].forEach(evt => {
-                    win.document.addEventListener(evt, initAudio, { once: true, capture: true });
-                });
+                // 모바일 브라우저는 사용자가 화면에 손을 대는 첫 순간에만 오디오 권한을 내어줍니다.
+                document.addEventListener('touchstart', initAudio, { once: true, capture: true });
+                document.addEventListener('click', initAudio, { once: true, capture: true });
 
-                // 2. 실제 클릭 소리 재생
                 function playClick() {
                     try {
                         initAudio();
+                        if (!actx) return;
+                        
                         const osc = actx.createOscillator();
                         const gain = actx.createGain();
                         osc.connect(gain);
                         gain.connect(actx.destination);
                         
-                        // 더 명확하고 잘 들리는 소리를 위해 주파수 대폭 증가
+                        // 더 명확하고 잘 들리는 타격감 있는 소리로 주파수 튜닝
                         osc.type = 'sine';
                         osc.frequency.setValueAtTime(900, actx.currentTime);
                         osc.frequency.exponentialRampToValueAtTime(300, actx.currentTime + 0.08);
                         
-                        // 볼륨(gain)을 0.8로 상향 (모바일 환경 고려)
+                        // 기존 볼륨 0.15 -> 0.8 로 5배 이상 대폭 상향 (모바일 환경 고려)
                         gain.gain.setValueAtTime(0.8, actx.currentTime);
                         gain.gain.exponentialRampToValueAtTime(0.01, actx.currentTime + 0.08);
                         
@@ -1373,16 +1347,33 @@ def app_shell_css():
                     } catch(e) {}
                 }
                 
-                // 3. 버튼이나 보기 클릭 시 소리 발생
-                win.document.addEventListener('click', function(e) {
+                document.addEventListener('click', function(e) {
                     let target = e.target;
                     let isButton = target.closest('button');
-                    let isRadio = target.closest('[data-testid="stRadio"] label') || (target.tagName && target.tagName.toLowerCase() === 'input' && target.type === 'radio');
+                    let isRadio = target.closest('[data-testid="stRadio"] label') || (target.tagName === 'INPUT' && target.type === 'radio');
                     if (isButton || isRadio) {
                         playClick();
                     }
                 }, true);
             }
+
+            // 2. 모바일 하단 3버튼 레이아웃 강제 고정 (스트림릿의 모바일 CSS 무시)
+            setInterval(function() {
+                var marks = document.querySelectorAll('.exam-nav-side-mark, .result-actions-mark');
+                marks.forEach(function(mark) {
+                    var block = mark.closest('[data-testid="stHorizontalBlock"]');
+                    if (block) {
+                        block.style.setProperty('display', 'flex', 'important');
+                        block.style.setProperty('flex-direction', 'row', 'important');
+                        block.style.setProperty('flex-wrap', 'nowrap', 'important');
+                        Array.from(block.children).forEach(function(col) {
+                            col.style.setProperty('width', '33.33%', 'important');
+                            col.style.setProperty('min-width', '33.33%', 'important');
+                            col.style.setProperty('flex', '1 1 0', 'important');
+                        });
+                    }
+                });
+            }, 500);
         })();
         </script>
         """,
@@ -1832,11 +1823,11 @@ def view_exam():
             if feedback.get("source"):
                 st.caption(f"출처: {feedback['source']}")
 
-    # ----------------- 가운데 [다음] 버튼도 양옆 버튼과 똑같은 디자인(secondary)으로 통일 -----------------
-    st.markdown('<div class="exam-nav-side-mark"></div>', unsafe_allow_html=True)
+    # ----------------- 마커를 Column 안쪽에 배치하여 3개 버튼 모두 1줄 레이아웃 강제 -----------------
     nav_l, nav_m, nav_r = st.columns(3, gap="small")
     
     with nav_l:
+        st.markdown('<div class="exam-nav-side-mark"></div>', unsafe_allow_html=True)
         if st.button("이전", disabled=idx <= 0, use_container_width=True, type="secondary", key="exam_prev"):
             st.session_state.q_index = idx - 1
             st.session_state.feedback = None
@@ -1845,7 +1836,7 @@ def view_exam():
             
     with nav_m:
         next_label = ("학습 종료" if is_learn else "제출하기") if is_last else "다음"
-        # type="primary" 였던 것을 type="secondary" 로 변경하여 하얀색 바탕에 글씨만 나오도록 수정
+        # 가운데 버튼도 양옆 버튼과 똑같은 디자인(secondary)으로 통일
         if st.button(next_label, type="secondary", use_container_width=True, key="exam_next_mid"):
             if is_last:
                 _, qs2 = load_exam(attempt_id, user["id"])
