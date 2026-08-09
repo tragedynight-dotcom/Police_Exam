@@ -1,0 +1,16 @@
+name: Keep Streamlit Alive
+
+on:
+  schedule:
+    # 6시간마다 자동으로 접속 신호 전송 (cron 표현식)
+    - cron: '0 */6 * * *'
+  # GitHub 화면에서 수동으로 실행해볼 수 있는 버튼 추가
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Request to Streamlit App
+        run: |
+          curl -s https://police-exam.streamlit.app > /dev/null
