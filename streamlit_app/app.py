@@ -63,7 +63,7 @@ def init_state():
         "reset_email": "",
         "topics_mode": "immediate",
         "attempt_id": None,
-        "q_index": -1,  # 새로 진입함을 구분하기 위해 -1로 초기화
+        "q_index": -1,
         "feedback": None,
         "result_wrong_only": False,
         "result_show_topic_mix": False,
@@ -78,7 +78,6 @@ def init_state():
 
 
 def restore_user_from_url():
-    """URL의 query_params에서 토큰을 읽어와 새로고침 후에도 로그인 세션을 복구한다."""
     if st.session_state.get("_force_logout"):
         st.session_state.user = None
         if "auth" not in st.query_params:
@@ -86,6 +85,12 @@ def restore_user_from_url():
         return
 
     if st.session_state.get("user"):
+        try:
+            token = make_auth_token(st.session_state.user["id"])
+            if st.query_params.get("auth") != token:
+                st.query_params["auth"] = token
+        except Exception:
+            pass
         return
 
     token = st.query_params.get("auth")
@@ -109,7 +114,15 @@ def login_success(user: dict, view: str = "dashboard", **kwargs):
     st.session_state._force_logout = False
     st.session_state.user = user
     token = make_auth_token(user["id"])
-    st.query_params["auth"] = token  # URL 파라미터에 토큰 세팅
+    st.query_params["auth"] = token
+    # postMessage를 이용해 부모 창(GitHub Pages)에 토큰 전달 및 저장 요청
+    components.html(f"""
+        <script>
+        try {{
+            window.parent.postMessage({{ type: 'DAMOA_LOGIN', token: '{token}' }}, '*');
+        }} catch(e) {{}}
+        </script>
+    """, height=0, width=0)
     go(view, **kwargs)
 
 
@@ -117,16 +130,20 @@ def logout():
     st.session_state.user = None
     st.session_state._force_logout = True
     if "auth" in st.query_params:
-        del st.query_params["auth"]  # URL 파라미터 제거
+        del st.query_params["auth"]
+    components.html("""
+        <script>
+        try {{
+            window.parent.postMessage({{ type: 'DAMOA_LOGOUT' }}, '*');
+        }} catch(e) {{}}
+        </script>
+    """, height=0, width=0)
     go("login")
 
 
 def reset_result_filters():
-    """결과 화면의 토글/패널 상태를 초기화한다."""
     st.session_state.result_wrong_only = False
     st.session_state.result_show_topic_mix = False
-    # (수정됨) 하단 '홈으로' 버튼 클릭 시 발생하는 Streamlit 위젯 초기화 오류 방지를 위해
-    # result_wrong_toggle 값을 수동으로 강제 변경하는 코드를 삭제했습니다.
 
 
 def go(view: str, **kwargs):
@@ -162,7 +179,6 @@ def request_scroll_to(selector: str, block: str = "center"):
 
 
 def flush_scroll_top():
-    """화면 전환/답안 채점 후 스크롤 위치를 맞춘다. (CORS 에러 방지 처리 완료)"""
     target = st.session_state.pop("_scroll_to", None)
     to_top = st.session_state.pop("_scroll_top", False)
     if not target and not to_top:
@@ -188,7 +204,7 @@ def flush_scroll_top():
                   doc = window.parent.document;
                   win = window.parent;
                 }}
-              }} catch (e) {{}} // iframe 보안 제약 무시
+              }} catch (e) {{}} 
               
               const sel = {sel_js};
               const block = {block_js};
@@ -223,7 +239,7 @@ def flush_scroll_top():
               doc = window.parent.document;
               win = window.parent;
             }}
-          }} catch (e) {{}} // iframe 보안 제약 무시
+          }} catch (e) {{}}
 
           function toTop() {{
             const seen = new Set();
@@ -279,7 +295,6 @@ def flush_scroll_top():
 
 
 def stem_html(stem: str) -> str:
-    """질문 + (있으면) ㄱ/㉠ 지문 박스를 HTML로 렌더한다."""
     stem = strip_difficulty_marker(stem or "")
     prompt, items = split_boxed_stem(stem)
     if not items:
@@ -379,7 +394,6 @@ def email_input(label: str = "경찰웹메일 ID", key: str = "email_local") -> 
 
 
 def auth_layout(title: str, subtitle: str | None, body):
-    # 로그인/인증 박스를 화면 수직 정중앙에 배치하는 CSS
     st.html(
         """
         <style>
@@ -1204,47 +1218,12 @@ def app_shell_css():
             margin: 0 !important;
             white-space: nowrap !important;
           }
+          
+          /* ================================================== */
+          /* 네비게이션 3등분(이전/다음/홈으로) 강제 1줄 고정 CSS */
+          /* ================================================== */
+          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark),
           div[data-testid='stHorizontalBlock']:has(.result-actions-mark) {
-            display: flex !important;
-            flex-direction: row !important;
-            flex-wrap: nowrap !important;
-            gap: 0.4rem !important;
-            align-items: stretch !important;
-            margin: 0.75rem 0 0.35rem !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) > div {
-            flex: 1 1 0 !important;
-            width: auto !important;
-            min-width: 0 !important;
-            max-width: none !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) .element-container:has(.result-actions-mark),
-          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) [data-testid='stElementContainer']:has(.result-actions-mark) {
-            display: none !important;
-            height: 0 !important;
-            margin: 0 !important;
-            padding: 0 !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) .stButton {
-            width: 100% !important;
-            margin: 0 !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) .stButton > button,
-          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) .stButton > button[kind='secondary'],
-          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) .stButton > button[data-testid='baseButton-secondary'],
-          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) .stButton > button[kind='primary'],
-          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) .stButton > button[data-testid='baseButton-primary'] {
-            font-size: 0.72rem !important;
-            font-weight: 600 !important;
-            padding: 0.45rem 0.35rem !important;
-            min-height: 0 !important;
-            height: 2.35rem !important;
-            border-radius: 0.6rem !important;
-            white-space: nowrap !important;
-            width: 100% !important;
-            line-height: 1.15 !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) {
             display: flex !important;
             flex-direction: row !important;
             flex-wrap: nowrap !important;
@@ -1252,29 +1231,38 @@ def app_shell_css():
             align-items: stretch !important;
             margin: 0.35rem 0 0.15rem !important;
           }
-          /* 이전/다음/홈으로 3등분 처리를 위한 CSS 업데이트 */
-          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) > div {
+          @media (max-width: 1024px) {
+            div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark),
+            div[data-testid='stHorizontalBlock']:has(.result-actions-mark) {
+                flex-direction: row !important;
+            }
+          }
+          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) > [data-testid="column"],
+          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) > [data-testid="column"] {
             flex: 1 1 0 !important;
-            width: auto !important;
+            width: 33.33% !important;
             min-width: 0 !important;
             max-width: none !important;
+            display: block !important;
           }
+          
           div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) .element-container:has(.exam-nav-side-mark),
-          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) [data-testid='stElementContainer']:has(.exam-nav-side-mark) {
+          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) [data-testid='stElementContainer']:has(.exam-nav-side-mark),
+          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) .element-container:has(.result-actions-mark),
+          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) [data-testid='stElementContainer']:has(.result-actions-mark) {
             display: none !important;
             height: 0 !important;
             margin: 0 !important;
             padding: 0 !important;
           }
-          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) .stButton {
+          
+          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) .stButton,
+          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) .stButton {
             width: 100% !important;
             margin: 0 !important;
           }
           div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) .stButton > button,
-          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) .stButton > button[kind='secondary'],
-          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) .stButton > button[data-testid='baseButton-secondary'],
-          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) .stButton > button[kind='primary'],
-          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) .stButton > button[data-testid='baseButton-primary'] {
+          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) .stButton > button {
             font-size: 0.75rem !important;
             font-weight: 600 !important;
             padding: 0.35rem 0.5rem !important;
@@ -1286,6 +1274,7 @@ def app_shell_css():
             box-sizing: border-box !important;
             line-height: 1.2 !important;
           }
+
           div[data-testid='stHorizontalBlock']:has(.topics-chips-mark) {
             display: flex !important;
             flex-direction: row !important;
@@ -1329,6 +1318,64 @@ def app_shell_css():
           }
         </style>
         """
+    )
+    
+    components.html(
+        """
+        <script>
+        (function() {
+            let win = window.parent || window;
+            let doc = win.document;
+
+            if (!win.__audio_click_injected) {
+                win.__audio_click_injected = true;
+                let actx = null;
+                
+                function initAudio() {
+                    if (!actx) {
+                        let AudioCtx = win.AudioContext || win.webkitAudioContext;
+                        if (AudioCtx) actx = new AudioCtx();
+                    }
+                    if (actx && actx.state === 'suspended') actx.resume();
+                }
+                
+                doc.addEventListener('touchstart', initAudio, { once: true, capture: true });
+                doc.addEventListener('click', initAudio, { once: true, capture: true });
+
+                function playClick() {
+                    try {
+                        initAudio();
+                        if (!actx) return;
+                        const osc = actx.createOscillator();
+                        const gain = actx.createGain();
+                        osc.connect(gain);
+                        gain.connect(actx.destination);
+                        
+                        osc.type = 'sine';
+                        osc.frequency.setValueAtTime(900, actx.currentTime);
+                        osc.frequency.exponentialRampToValueAtTime(300, actx.currentTime + 0.08);
+                        
+                        gain.gain.setValueAtTime(0.8, actx.currentTime);
+                        gain.gain.exponentialRampToValueAtTime(0.01, actx.currentTime + 0.08);
+                        
+                        osc.start(actx.currentTime);
+                        osc.stop(actx.currentTime + 0.08);
+                    } catch(e) {}
+                }
+                
+                doc.addEventListener('click', function(e) {
+                    let target = e.target;
+                    let isButton = target.closest('button');
+                    let isRadio = target.closest('[data-testid="stRadio"] label') || (target.tagName === 'INPUT' && target.type === 'radio');
+                    if (isButton || isRadio) {
+                        playClick();
+                    }
+                }, true);
+            }
+        })();
+        </script>
+        """,
+        height=0, width=0
     )
 
 
@@ -1463,7 +1510,7 @@ def view_dashboard():
 
     recent = list(recent_attempts(user["id"], limit=3))[:3]
     st.markdown(
-        '<p class="recent-heading">최근 학습 현황</p>',
+        '<p class="recent-heading">최근 학습 완료 현황</p>',
         unsafe_allow_html=True,
     )
     if not recent:
@@ -1683,7 +1730,7 @@ def view_exam():
     timer_display = (
         '<div class="timer-pill" style="background: rgba(201, 162, 39, 0.12); color: #c9a227; border-color: rgba(201, 162, 39, 0.3);">시간 제한 없음</div>'
         if is_learn_mode
-        else f'<div class="timer-pill">남은 시간 {mm:02d}:{ss:02d}</div>'
+        else f'<div id="realtime-timer" class="timer-pill">남은 시간 {mm:02d}:{ss:02d}</div>'
     )
 
     st.markdown(
@@ -1731,7 +1778,6 @@ def view_exam():
         label_visibility="collapsed",
     )
 
-    # 정답을 변경했을 때만 자동 제출 및 피드백 처리
     if selected is not None and not locked and selected != current:
         ok, msg, feedback = save_answer(attempt_id, user["id"], q["id"], selected)
         if ok:
@@ -1775,7 +1821,6 @@ def view_exam():
             if feedback.get("source"):
                 st.caption(f"출처: {feedback['source']}")
 
-    # ----------------- 변경된 부분: 이전 / 다음 / 홈으로 3버튼 하단 배치 -----------------
     st.markdown('<div class="exam-nav-side-mark"></div>', unsafe_allow_html=True)
     nav_l, nav_m, nav_r = st.columns(3, gap="small")
     
@@ -1787,9 +1832,8 @@ def view_exam():
             st.rerun()
             
     with nav_m:
-        # 학습 모드의 마지막 문제면 '학습 종료', 아니면 '제출하기' 또는 '다음'
         next_label = ("학습 종료" if is_learn else "제출하기") if is_last else "다음"
-        if st.button(next_label, type="primary", use_container_width=True, key="exam_next_mid"):
+        if st.button(next_label, type="secondary", use_container_width=True, key="exam_next_mid"):
             if is_last:
                 _, qs2 = load_exam(attempt_id, user["id"])
                 unanswered = sum(1 for x in qs2 if x["userAnswer"] is None)
@@ -1809,7 +1853,42 @@ def view_exam():
     with nav_r:
         if st.button("홈으로", use_container_width=True, type="secondary", key="exam_home"):
             go("dashboard")
-    # -----------------------------------------------------------------------------
+
+    if not is_learn_mode:
+        components.html(
+            f"""
+            <script>
+            (function() {{
+                let doc = window.parent ? window.parent.document : document;
+                let win = window.parent ? window.parent : window;
+                
+                if (win.examTimerInterval) {{
+                    clearInterval(win.examTimerInterval);
+                }}
+                
+                const endsAt = {ends.timestamp()} * 1000;
+                win.examTimerInterval = setInterval(function() {{
+                    const el = doc.getElementById('realtime-timer');
+                    if (!el) return;
+                    
+                    let remain = Math.floor((endsAt - Date.now()) / 1000);
+                    if (remain < 0) remain = 0;
+                    
+                    let m = String(Math.floor(remain / 60)).padStart(2, '0');
+                    let s = String(remain % 60).padStart(2, '0');
+                    el.innerText = "남은 시간 " + m + ":" + s;
+                    
+                    if (remain <= 0) {{
+                        el.style.backgroundColor = "#e63946";
+                        el.style.color = "white";
+                        clearInterval(win.examTimerInterval);
+                    }}
+                }}, 1000);
+            }})();
+            </script>
+            """,
+            height=0, width=0
+        )
 
 
 def view_result():
@@ -2033,7 +2112,7 @@ def view_result():
 
 def main():
     init_state()
-    restore_user_from_url()  # URL에서 로그인 토큰 복구
+    restore_user_from_url()
     view = st.session_state.view
     if st.session_state.user and view in {"login", "register"}:
         view = "dashboard"
