@@ -1203,7 +1203,7 @@ def app_shell_css():
           }
           
           /* ================================================== */
-          /* 네비게이션 3등분(이전/다음/홈으로) 강제 CSS (PC & 모바일 동일) */
+          /* 네비게이션 3등분(이전/다음/홈으로) 강제 CSS */
           /* ================================================== */
           div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark),
           div[data-testid='stHorizontalBlock']:has(.result-actions-mark) {
@@ -1301,27 +1301,31 @@ def app_shell_css():
         """
     )
     
-    # --------- 클릭 효과음 (모바일 권한 완벽 우회 및 볼륨 5배 증폭) & 3버튼 레이아웃 강제 JS ---------
+    # --------- 클릭 효과음 (부모 창 완벽 지정) 및 모바일 3버튼 레이아웃 강제 자바스크립트 ---------
     components.html(
         """
         <script>
         (function() {
+            // 스트림릿의 iframe을 넘어 실제 브라우저 화면(부모 창)을 정확히 타겟팅합니다.
+            let win = window.parent || window;
+            let doc = win.document;
+
             // 1. 오디오 처리 (모바일 보안 해제 및 볼륨 업그레이드)
-            if (!window.__audio_click_injected) {
-                window.__audio_click_injected = true;
+            if (!win.__audio_click_injected) {
+                win.__audio_click_injected = true;
                 let actx = null;
                 
                 function initAudio() {
                     if (!actx) {
-                        let AudioCtx = window.AudioContext || window.webkitAudioContext;
+                        let AudioCtx = win.AudioContext || win.webkitAudioContext;
                         if (AudioCtx) actx = new AudioCtx();
                     }
                     if (actx && actx.state === 'suspended') actx.resume();
                 }
                 
                 // 모바일 브라우저는 사용자가 화면에 손을 대는 첫 순간에만 오디오 권한을 내어줍니다.
-                document.addEventListener('touchstart', initAudio, { once: true, capture: true });
-                document.addEventListener('click', initAudio, { once: true, capture: true });
+                doc.addEventListener('touchstart', initAudio, { once: true, capture: true });
+                doc.addEventListener('click', initAudio, { once: true, capture: true });
 
                 function playClick() {
                     try {
@@ -1347,7 +1351,8 @@ def app_shell_css():
                     } catch(e) {}
                 }
                 
-                document.addEventListener('click', function(e) {
+                // 버튼이나 보기 클릭 시 부모 창에서 소리 발생 감지
+                doc.addEventListener('click', function(e) {
                     let target = e.target;
                     let isButton = target.closest('button');
                     let isRadio = target.closest('[data-testid="stRadio"] label') || (target.tagName === 'INPUT' && target.type === 'radio');
@@ -1359,7 +1364,7 @@ def app_shell_css():
 
             // 2. 모바일 하단 3버튼 레이아웃 강제 고정 (스트림릿의 모바일 CSS 무시)
             setInterval(function() {
-                var marks = document.querySelectorAll('.exam-nav-side-mark, .result-actions-mark');
+                var marks = doc.querySelectorAll('.exam-nav-side-mark, .result-actions-mark');
                 marks.forEach(function(mark) {
                     var block = mark.closest('[data-testid="stHorizontalBlock"]');
                     if (block) {
@@ -1823,11 +1828,10 @@ def view_exam():
             if feedback.get("source"):
                 st.caption(f"출처: {feedback['source']}")
 
-    # ----------------- 마커를 Column 안쪽에 배치하여 3개 버튼 모두 1줄 레이아웃 강제 -----------------
+    st.markdown('<div class="exam-nav-side-mark"></div>', unsafe_allow_html=True)
     nav_l, nav_m, nav_r = st.columns(3, gap="small")
     
     with nav_l:
-        st.markdown('<div class="exam-nav-side-mark"></div>', unsafe_allow_html=True)
         if st.button("이전", disabled=idx <= 0, use_container_width=True, type="secondary", key="exam_prev"):
             st.session_state.q_index = idx - 1
             st.session_state.feedback = None
@@ -1836,7 +1840,6 @@ def view_exam():
             
     with nav_m:
         next_label = ("학습 종료" if is_learn else "제출하기") if is_last else "다음"
-        # 가운데 버튼도 양옆 버튼과 똑같은 디자인(secondary)으로 통일
         if st.button(next_label, type="secondary", use_container_width=True, key="exam_next_mid"):
             if is_last:
                 _, qs2 = load_exam(attempt_id, user["id"])
@@ -1858,7 +1861,6 @@ def view_exam():
         if st.button("홈으로", use_container_width=True, type="secondary", key="exam_home"):
             go("dashboard")
 
-    # ----------------- 실시간 타이머 작동용 JavaScript (학습 모드가 아닐 때만 작동) -----------------
     if not is_learn_mode:
         components.html(
             f"""
