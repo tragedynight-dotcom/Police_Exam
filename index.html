@@ -11,7 +11,8 @@
     body, html {
       margin: 0; padding: 0; width: 100%; height: 100%;
       overflow: hidden; background-color: #ffffff;
-      overscroll-behavior-y: contain; 
+      /* 스마트폰 화면 끌어내림(새로고침) 완벽 차단 */
+      overscroll-behavior-y: none; 
     }
     iframe {
       width: 100%; height: 100%; border: none;
@@ -35,44 +36,53 @@
   </div>
 
   <script>
-    // 최상위 창(GitHub Pages)에서 스트림릿의 로그인 신호를 받아 안전하게 저장
+    // 1. 스트림릿(자식)으로부터 로그인 정보를 넘겨받아 URL에 강제 박제
     window.addEventListener('message', function(event) {
       if (event.data) {
         if (event.data.type === 'DAMOA_LOGIN' && event.data.token) {
-          try { localStorage.setItem('damoa_auth', event.data.token); } catch(e) {}
+          try { 
+            localStorage.setItem('damoa_auth', event.data.token);
+            // 주소창 URL에 토큰을 넣어버려서 새로고침해도 절대 안 풀림!
+            var newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname + "?auth=" + event.data.token;
+            window.history.replaceState({path: newUrl}, '', newUrl);
+          } catch(e) {}
         } else if (event.data.type === 'DAMOA_LOGOUT') {
-          try { localStorage.removeItem('damoa_auth'); } catch(e) {}
+          try { 
+            localStorage.removeItem('damoa_auth');
+            var newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
+            window.history.replaceState({path: newUrl}, '', newUrl);
+          } catch(e) {}
         }
       }
     });
 
-    try {
-      var token = null;
-      try { token = localStorage.getItem('damoa_auth'); } catch(e) {}
-      
-      var targetUrl = "https://police-exam.streamlit.app/?embed=true";
-      var params = new URLSearchParams(window.location.search);
-      var urlAuth = params.get('auth');
-      
-      if (urlAuth) {
-        token = urlAuth;
-        try { localStorage.setItem('damoa_auth', urlAuth); } catch(e) {}
-      }
-      
-      if (token) {
-        targetUrl += "&auth=" + token;
-      }
-      
-      var iframe = document.getElementById('app-iframe');
-      if (iframe) {
-        iframe.src = targetUrl;
-      }
-    } catch (err) {
-      var iframe = document.getElementById('app-iframe');
-      if (iframe) {
-        iframe.src = "https://police-exam.streamlit.app/?embed=true";
-      }
+    // 2. 앱 실행 및 토큰(URL & 로컬스토리지) 복구
+    function loadApp() {
+        var token = null;
+        try { token = localStorage.getItem('damoa_auth'); } catch(e) {}
+        
+        var targetUrl = "https://police-exam.streamlit.app/?embed=true";
+        var params = new URLSearchParams(window.location.search);
+        var urlAuth = params.get('auth');
+        
+        if (urlAuth) {
+          token = urlAuth;
+          try { localStorage.setItem('damoa_auth', urlAuth); } catch(e) {}
+        }
+        
+        if (token) {
+          targetUrl += "&auth=" + token;
+          if (!urlAuth) {
+              var newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname + "?auth=" + token;
+              window.history.replaceState({path: newUrl}, '', newUrl);
+          }
+        }
+        
+        var iframe = document.getElementById('app-iframe');
+        if (iframe) iframe.src = targetUrl;
     }
+    
+    loadApp();
 
     var ua = navigator.userAgent.toLowerCase();
     if(ua.indexOf('naver') > -1 || ua.indexOf('kakaotalk') > -1 || ua.indexOf('line') > -1) {
