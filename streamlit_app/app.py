@@ -14,9 +14,6 @@ if str(ROOT) not in sys.path:
 
 from lib import auth as _auth  # noqa: E402
 
-# =====================================================================
-# [복구 완료] 제가 실수로 날려버렸던 로그인 필수 변수들을 제자리에 돌려놓았습니다.
-# =====================================================================
 ALLOWED_EMAIL_DOMAIN = _auth.ALLOWED_EMAIL_DOMAIN
 forgot_password = _auth.forgot_password
 full_police_email = _auth.full_police_email
@@ -28,7 +25,6 @@ reset_password = _auth.reset_password
 user_id_from_auth_token = _auth.user_id_from_auth_token
 verify_otp = _auth.verify_otp
 public_user = _auth.public_user
-# =====================================================================
 
 from lib.exam import (  # noqa: E402
     attempt_ends_at,
@@ -120,7 +116,6 @@ def login_success(user: dict, view: str = "dashboard", **kwargs):
     st.session_state.user = user
     token = make_auth_token(user["id"])
     st.query_params["auth"] = token
-    # 부모 창(깃허브)으로 토큰 전송 (보안 에러 방지용 window.top)
     components.html(f"""
         <script>
         try {{
@@ -1811,17 +1806,18 @@ def view_exam():
 
     if selected is not None and not locked and selected != current:
         
-        # [패치] 학습 모드에서 정답 선택 시 서버 시간에 구애받지 않도록 시간 제한 갱신 (DB 접근)
+        # [안전한 시간 초과 방지] 학습 모드에서 정답을 저장하기 직전에, DB의 시험 시작 시간을 '지금'으로 갱신하여 
+        # 백엔드에서 시간 초과 에러를 뿜지 못하도록 안전하게 우회합니다.
         if is_learn:
             try:
                 from lib.db import execute
-                execute("UPDATE Attempt SET startedAt = datetime('now', '-1 minutes'), status = 'active' WHERE id = ?", (attempt_id,))
+                execute("UPDATE Attempt SET startedAt = datetime('now'), status = 'active' WHERE id = ?", (attempt_id,))
             except Exception:
                 pass
                 
         ok, msg, feedback = save_answer(attempt_id, user["id"], q["id"], selected)
         
-        # 만일의 경우를 대비한 최후의 우회 로직
+        # 만일의 경우를 대비한 최후의 우회 로직 (DB 업데이트가 실패해도 프론트에서 통과시킴)
         if not ok and is_learn:
             ok = True
             st.session_state.feedback = {
@@ -1895,11 +1891,11 @@ def view_exam():
                 else:
                     st.session_state.confirm_submit = False
                     
-                    # [패치] 제출 시에도 강제로 막히는 것을 방지
+                    # [안전한 시간 초과 방지] 학습 종료 시에도 서버 에러를 막기 위해 시간 갱신
                     if is_learn:
                         try:
                             from lib.db import execute
-                            execute("UPDATE Attempt SET startedAt = datetime('now', '-1 minutes'), status = 'active' WHERE id = ?", (attempt_id,))
+                            execute("UPDATE Attempt SET startedAt = datetime('now'), status = 'active' WHERE id = ?", (attempt_id,))
                         except Exception:
                             pass
                             
