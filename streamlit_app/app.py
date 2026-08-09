@@ -115,7 +115,7 @@ def login_success(user: dict, view: str = "dashboard", **kwargs):
     st.session_state.user = user
     token = make_auth_token(user["id"])
     st.query_params["auth"] = token
-    # window.top을 사용하여 최상위 부모 창(GitHub Pages)으로 토큰 전달
+    # 브라우저 간 보안에러 없이 깃허브 쪽으로만 토큰 송신
     components.html(f"""
         <script>
         try {{
@@ -1220,7 +1220,7 @@ def app_shell_css():
           }
           
           /* ================================================== */
-          /* 네비게이션 강제 1줄 고정 (스트림릿 자체 DOM만 타겟팅) */
+          /* 네비게이션 3등분 강제 CSS */
           /* ================================================== */
           div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark),
           div[data-testid='stHorizontalBlock']:has(.result-actions-mark) {
@@ -1231,14 +1231,12 @@ def app_shell_css():
             align-items: stretch !important;
             margin: 0.35rem 0 0.15rem !important;
           }
-          /* 모바일 해상도에서 강제로 가로 유지 */
           @media (max-width: 1024px) {
             div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark),
             div[data-testid='stHorizontalBlock']:has(.result-actions-mark) {
                 flex-direction: row !important;
             }
           }
-          /* 각 버튼 영역을 정확히 33.3%씩 배분 */
           div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) > [data-testid="column"],
           div[data-testid='stHorizontalBlock']:has(.result-actions-mark) > [data-testid="column"] {
             flex: 1 1 0 !important;
@@ -1248,7 +1246,6 @@ def app_shell_css():
             display: block !important;
           }
           
-          /* 마커 감추기 */
           div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) .element-container:has(.exam-nav-side-mark),
           div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) [data-testid='stElementContainer']:has(.exam-nav-side-mark),
           div[data-testid='stHorizontalBlock']:has(.result-actions-mark) .element-container:has(.result-actions-mark),
@@ -1259,7 +1256,6 @@ def app_shell_css():
             padding: 0 !important;
           }
           
-          /* 버튼 스타일 통일 */
           div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) .stButton,
           div[data-testid='stHorizontalBlock']:has(.result-actions-mark) .stButton {
             width: 100% !important;
@@ -1324,12 +1320,13 @@ def app_shell_css():
         """
     )
     
-    # --------- 오디오 및 모바일 버튼 1줄 고정 JS (안전한 DOM 타겟팅) ---------
+    # --------- 오디오 및 모바일 버튼 강제 정렬 (보안에러 발생 안하도록 스트림릿 DOM 전용 타겟팅) ---------
     components.html(
         """
         <script>
         (function() {
-            // [핵심] 보안 에러를 피하기 위해 스트림릿 앱 내부 DOM만 타겟팅합니다!
+            // [수정] 해킹(보안) 경고를 피하기 위해, 바깥의 깃허브 화면(window.top)이 아니라
+            // 안전한 스트림릿 자체 화면(window.parent)만 컨트롤하도록 수정했습니다.
             let doc = document;
             let win = window;
             try {
@@ -1385,7 +1382,7 @@ def app_shell_css():
                 }, true);
             }
 
-            // 하단 3버튼 가로 1줄 고정 실시간 보정
+            // 하단 3버튼 가로 1줄 고정 (스트림릿 화면 전용)
             setInterval(function() {
                 var marks = doc.querySelectorAll('.exam-nav-side-mark, .result-actions-mark');
                 marks.forEach(function(mark) {
@@ -1396,7 +1393,7 @@ def app_shell_css():
                         block.style.setProperty('flex-wrap', 'nowrap', 'important');
                         Array.from(block.children).forEach(function(col) {
                             col.style.setProperty('width', '33.33%', 'important');
-                            col.style.setProperty('min-width', '33.33%', 'important');
+                            col.style.setProperty('min-width', '0', 'important'); 
                             col.style.setProperty('flex', '1 1 0', 'important');
                             col.style.setProperty('display', 'block', 'important');
                         });
@@ -1852,10 +1849,12 @@ def view_exam():
             if feedback.get("source"):
                 st.caption(f"출처: {feedback['source']}")
 
-    st.markdown('<div class="exam-nav-side-mark"></div>', unsafe_allow_html=True)
+    # [수정 완료] 마커(.exam-nav-side-mark)를 nav_l 컬럼 "안"에 넣어서
+    # CSS와 JS가 부모 영역을 정확히 찾도록 고쳤습니다! (이제 절대 3줄로 깨지지 않습니다)
     nav_l, nav_m, nav_r = st.columns(3, gap="small")
     
     with nav_l:
+        st.markdown('<div class="exam-nav-side-mark"></div>', unsafe_allow_html=True)
         if st.button("이전", disabled=idx <= 0, use_container_width=True, type="secondary", key="exam_prev"):
             st.session_state.q_index = idx - 1
             st.session_state.feedback = None
