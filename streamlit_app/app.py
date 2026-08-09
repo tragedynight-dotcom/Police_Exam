@@ -16,7 +16,6 @@
     iframe {
       width: 100%; height: 100%; border: none;
     }
-    /* 인앱 브라우저(네이버/카카오) 안내 배너 디자인 */
     #inapp-guide {
       display: none; position: fixed; bottom: 0; left: 0; width: 100%;
       background-color: #e63946; color: #ffffff; text-align: center;
@@ -28,44 +27,51 @@
   </style>
 </head>
 <body>
-  <!-- 동적 iframe (토큰 유지 기능 포함) -->
   <iframe id="app-iframe" allow="clipboard-write; camera; geolocation; fullscreen"></iframe>
   
-  <!-- 네이버/카카오 접속 시 하단에 뜨는 안내 배너 (요청하신 문구 반영) -->
   <div id="inapp-guide">
     현재 네이버/카카오 앱에서는 단독 앱 설치가 제한됩니다.<br>
     우측 하단 메뉴(≡)에서 <b>'다른 브라우저로 열기'</b> 또는 <b>'홈 화면에 추가'</b>를 선택하여 사용해 주시기 바랍니다.
   </div>
 
   <script>
-    // 브라우저 기억장치(localStorage)에서 로그인 토큰을 불러와 유지합니다.
-    var token = localStorage.getItem('damoa_auth');
-    var targetUrl = "https://police-exam.streamlit.app/?embed=true";
-    
-    var params = new URLSearchParams(window.location.search);
-    var urlAuth = params.get('auth');
-    if (urlAuth) {
-      token = urlAuth;
-      localStorage.setItem('damoa_auth', urlAuth);
+    try {
+      var token = null;
+      try { token = localStorage.getItem('damoa_auth'); } catch(e) {}
+      
+      var targetUrl = "https://police-exam.streamlit.app/?embed=true";
+      var params = new URLSearchParams(window.location.search);
+      var urlAuth = params.get('auth');
+      
+      if (urlAuth) {
+        token = urlAuth;
+        try { localStorage.setItem('damoa_auth', urlAuth); } catch(e) {}
+      }
+      
+      if (token) {
+        targetUrl += "&auth=" + token;
+      }
+      
+      var iframe = document.getElementById('app-iframe');
+      if (iframe) {
+        iframe.src = targetUrl;
+      }
+    } catch (err) {
+      var iframe = document.getElementById('app-iframe');
+      if (iframe) {
+        iframe.src = "https://police-exam.streamlit.app/?embed=true";
+      }
     }
-    
-    if (token) {
-      targetUrl += "&auth=" + token;
-    }
-    document.getElementById('app-iframe').src = targetUrl;
 
-    // 접속한 앱이 네이버, 카카오톡, 라인인지 자동으로 감지합니다.
     var ua = navigator.userAgent.toLowerCase();
     if(ua.indexOf('naver') > -1 || ua.indexOf('kakaotalk') > -1 || ua.indexOf('line') > -1) {
-      document.getElementById('inapp-guide').style.display = 'block';
+      var guide = document.getElementById('inapp-guide');
+      if(guide) guide.style.display = 'block';
     }
 
-    // 서비스 워커 등록 (앱 설치용)
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js').then(reg => {
-          console.log('ServiceWorker 등록 성공');
-        });
+        navigator.serviceWorker.register('sw.js').catch(() => {});
       });
     }
   </script>
