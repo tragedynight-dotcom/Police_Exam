@@ -115,6 +115,14 @@ def login_success(user: dict, view: str = "dashboard", **kwargs):
     st.session_state.user = user
     token = make_auth_token(user["id"])
     st.query_params["auth"] = token
+    # window.top을 사용하여 최상위 부모 창(GitHub Pages)으로 토큰 전달
+    components.html(f"""
+        <script>
+        try {{
+            window.top.postMessage({{ type: 'DAMOA_LOGIN', token: '{token}' }}, '*');
+        }} catch(e) {{}}
+        </script>
+    """, height=0, width=0)
     go(view, **kwargs)
 
 
@@ -123,6 +131,13 @@ def logout():
     st.session_state._force_logout = True
     if "auth" in st.query_params:
         del st.query_params["auth"]
+    components.html("""
+        <script>
+        try {{
+            window.top.postMessage({{ type: 'DAMOA_LOGOUT' }}, '*');
+        }} catch(e) {{}}
+        </script>
+    """, height=0, width=0)
     go("login")
 
 
@@ -647,9 +662,6 @@ def app_shell_css():
         """
         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800;900&display=swap">
         <style>
-          html, body, [data-testid="stApp"], .main {
-            overscroll-behavior-y: none !important; /* 모바일 새로고침 원천 차단 */
-          }
           [data-testid='stMain'] {
             display: flex !important;
             flex-direction: column !important;
@@ -1208,7 +1220,7 @@ def app_shell_css():
           }
           
           /* ================================================== */
-          /* 네비게이션 3등분(이전/다음/홈으로) 강제 1줄 고정 CSS */
+          /* 네비게이션 강제 1줄 고정 (스트림릿 자체 DOM만 타겟팅) */
           /* ================================================== */
           div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark),
           div[data-testid='stHorizontalBlock']:has(.result-actions-mark) {
@@ -1219,12 +1231,14 @@ def app_shell_css():
             align-items: stretch !important;
             margin: 0.35rem 0 0.15rem !important;
           }
+          /* 모바일 해상도에서 강제로 가로 유지 */
           @media (max-width: 1024px) {
             div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark),
             div[data-testid='stHorizontalBlock']:has(.result-actions-mark) {
                 flex-direction: row !important;
             }
           }
+          /* 각 버튼 영역을 정확히 33.3%씩 배분 */
           div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) > [data-testid="column"],
           div[data-testid='stHorizontalBlock']:has(.result-actions-mark) > [data-testid="column"] {
             flex: 1 1 0 !important;
@@ -1234,6 +1248,7 @@ def app_shell_css():
             display: block !important;
           }
           
+          /* 마커 감추기 */
           div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) .element-container:has(.exam-nav-side-mark),
           div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) [data-testid='stElementContainer']:has(.exam-nav-side-mark),
           div[data-testid='stHorizontalBlock']:has(.result-actions-mark) .element-container:has(.result-actions-mark),
@@ -1244,6 +1259,7 @@ def app_shell_css():
             padding: 0 !important;
           }
           
+          /* 버튼 스타일 통일 */
           div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) .stButton,
           div[data-testid='stHorizontalBlock']:has(.result-actions-mark) .stButton {
             width: 100% !important;
@@ -1308,12 +1324,20 @@ def app_shell_css():
         """
     )
     
+    # --------- 오디오 및 모바일 버튼 1줄 고정 JS (안전한 DOM 타겟팅) ---------
     components.html(
         """
         <script>
         (function() {
-            let win = window.top || window;
-            let doc = win.document;
+            // [핵심] 보안 에러를 피하기 위해 스트림릿 앱 내부 DOM만 타겟팅합니다!
+            let doc = document;
+            let win = window;
+            try {
+                if (window.parent && window.parent.document) {
+                    doc = window.parent.document;
+                    win = window.parent;
+                }
+            } catch(e) {}
 
             if (!win.__audio_click_injected) {
                 win.__audio_click_injected = true;
@@ -1360,6 +1384,25 @@ def app_shell_css():
                     }
                 }, true);
             }
+
+            // 하단 3버튼 가로 1줄 고정 실시간 보정
+            setInterval(function() {
+                var marks = doc.querySelectorAll('.exam-nav-side-mark, .result-actions-mark');
+                marks.forEach(function(mark) {
+                    var block = mark.closest('[data-testid="stHorizontalBlock"]');
+                    if (block) {
+                        block.style.setProperty('display', 'flex', 'important');
+                        block.style.setProperty('flex-direction', 'row', 'important');
+                        block.style.setProperty('flex-wrap', 'nowrap', 'important');
+                        Array.from(block.children).forEach(function(col) {
+                            col.style.setProperty('width', '33.33%', 'important');
+                            col.style.setProperty('min-width', '33.33%', 'important');
+                            col.style.setProperty('flex', '1 1 0', 'important');
+                            col.style.setProperty('display', 'block', 'important');
+                        });
+                    }
+                });
+            }, 300);
         })();
         </script>
         """,
@@ -2120,7 +2163,6 @@ def main():
     }
     routes.get(view, view_login)()
     
-    # [핵심] 화면 렌더링이 모두 끝난 후 마지막에 토큰을 전송해야 안전하게 전달됩니다!
     token = st.query_params.get("auth")
     if token:
         components.html(f"<script>try{{window.top.postMessage({{type:'DAMOA_LOGIN', token:'{token}'}}, '*');}}catch(e){{}}</script>", height=0, width=0)
