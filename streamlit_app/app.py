@@ -115,11 +115,11 @@ def login_success(user: dict, view: str = "dashboard", **kwargs):
     st.session_state.user = user
     token = make_auth_token(user["id"])
     st.query_params["auth"] = token
-    # postMessage를 이용해 부모 창(GitHub Pages)에 토큰 전달 및 저장 요청
+    # window.top을 사용하여 최상위 부모 창(GitHub Pages)으로 토큰 전달
     components.html(f"""
         <script>
         try {{
-            window.parent.postMessage({{ type: 'DAMOA_LOGIN', token: '{token}' }}, '*');
+            window.top.postMessage({{ type: 'DAMOA_LOGIN', token: '{token}' }}, '*');
         }} catch(e) {{}}
         </script>
     """, height=0, width=0)
@@ -134,7 +134,7 @@ def logout():
     components.html("""
         <script>
         try {{
-            window.parent.postMessage({{ type: 'DAMOA_LOGOUT' }}, '*');
+            window.top.postMessage({{ type: 'DAMOA_LOGOUT' }}, '*');
         }} catch(e) {{}}
         </script>
     """, height=0, width=0)
@@ -1324,7 +1324,7 @@ def app_shell_css():
         """
         <script>
         (function() {
-            let win = window.parent || window;
+            let win = window.top || window;
             let doc = win.document;
 
             if (!win.__audio_click_injected) {
