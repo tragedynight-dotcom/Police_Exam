@@ -115,14 +115,6 @@ def login_success(user: dict, view: str = "dashboard", **kwargs):
     st.session_state.user = user
     token = make_auth_token(user["id"])
     st.query_params["auth"] = token
-    # window.top을 사용하여 최상위 부모 창(GitHub Pages)으로 토큰 전달
-    components.html(f"""
-        <script>
-        try {{
-            window.top.postMessage({{ type: 'DAMOA_LOGIN', token: '{token}' }}, '*');
-        }} catch(e) {{}}
-        </script>
-    """, height=0, width=0)
     go(view, **kwargs)
 
 
@@ -131,13 +123,6 @@ def logout():
     st.session_state._force_logout = True
     if "auth" in st.query_params:
         del st.query_params["auth"]
-    components.html("""
-        <script>
-        try {{
-            window.top.postMessage({{ type: 'DAMOA_LOGOUT' }}, '*');
-        }} catch(e) {{}}
-        </script>
-    """, height=0, width=0)
     go("login")
 
 
@@ -662,6 +647,9 @@ def app_shell_css():
         """
         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800;900&display=swap">
         <style>
+          html, body, [data-testid="stApp"], .main {
+            overscroll-behavior-y: none !important; /* 모바일 새로고침 원천 차단 */
+          }
           [data-testid='stMain'] {
             display: flex !important;
             flex-direction: column !important;
@@ -2131,6 +2119,14 @@ def main():
         "result": view_result,
     }
     routes.get(view, view_login)()
+    
+    # [핵심] 화면 렌더링이 모두 끝난 후 마지막에 토큰을 전송해야 안전하게 전달됩니다!
+    token = st.query_params.get("auth")
+    if token:
+        components.html(f"<script>try{{window.top.postMessage({{type:'DAMOA_LOGIN', token:'{token}'}}, '*');}}catch(e){{}}</script>", height=0, width=0)
+    elif st.session_state.get("_force_logout"):
+        components.html("<script>try{window.top.postMessage({type:'DAMOA_LOGOUT'}, '*');}catch(e){}</script>", height=0, width=0)
+        
     flush_scroll_top()
 
 
