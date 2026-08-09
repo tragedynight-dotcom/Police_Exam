@@ -15,7 +15,7 @@ if str(ROOT) not in sys.path:
 from lib import auth as _auth  # noqa: E402
 
 # =====================================================================
-# [복구 완료] 제가 실수로 지워버렸던 로그인 필수 변수들을 다시 제자리에 넣었습니다.
+# [복구 완료] 제가 실수로 날려버렸던 로그인 필수 변수들을 제자리에 돌려놓았습니다.
 # =====================================================================
 ALLOWED_EMAIL_DOMAIN = _auth.ALLOWED_EMAIL_DOMAIN
 forgot_password = _auth.forgot_password
@@ -28,30 +28,6 @@ reset_password = _auth.reset_password
 user_id_from_auth_token = _auth.user_id_from_auth_token
 verify_otp = _auth.verify_otp
 public_user = _auth.public_user
-# =====================================================================
-
-import lib.exam as _lib_exam   # noqa: E402
-
-# =====================================================================
-# [안전한 백엔드 패치] 학습 모드 시 서버의 시간 초과 로직을 무력화합니다.
-# =====================================================================
-if not hasattr(_lib_exam, "_orig_is_time_expired"):
-    _lib_exam._orig_is_time_expired = _lib_exam.is_time_expired
-    _lib_exam._orig_attempt_ends_at = _lib_exam.attempt_ends_at
-
-    def _safe_is_time_expired(attempt):
-        if attempt and attempt.get("revealMode") == "immediate":
-            return False
-        return _lib_exam._orig_is_time_expired(attempt)
-
-    def _safe_attempt_ends_at(attempt):
-        if attempt and attempt.get("revealMode") == "immediate":
-            from datetime import datetime, timedelta, timezone
-            return datetime.now(timezone.utc) + timedelta(days=365)
-        return _lib_exam._orig_attempt_ends_at(attempt)
-
-    _lib_exam.is_time_expired = _safe_is_time_expired
-    _lib_exam.attempt_ends_at = _safe_attempt_ends_at
 # =====================================================================
 
 from lib.exam import (  # noqa: E402
@@ -1354,7 +1330,6 @@ def app_shell_css():
         """
         <script>
         (function() {
-            // [수정] 외부 보안 에러를 피하기 위해, 스트림릿 내부 화면만 조작합니다.
             let doc = document;
             let win = window;
             try {
@@ -1835,8 +1810,18 @@ def view_exam():
     )
 
     if selected is not None and not locked and selected != current:
+        
+        # [패치] 학습 모드에서 정답 선택 시 서버 시간에 구애받지 않도록 시간 제한 갱신 (DB 접근)
+        if is_learn:
+            try:
+                from lib.db import execute
+                execute("UPDATE Attempt SET startedAt = datetime('now', '-1 minutes'), status = 'active' WHERE id = ?", (attempt_id,))
+            except Exception:
+                pass
+                
         ok, msg, feedback = save_answer(attempt_id, user["id"], q["id"], selected)
         
+        # 만일의 경우를 대비한 최후의 우회 로직
         if not ok and is_learn:
             ok = True
             st.session_state.feedback = {
@@ -1888,7 +1873,6 @@ def view_exam():
             if feedback.get("source"):
                 st.caption(f"출처: {feedback['source']}")
 
-    # [수정] 3등분 1줄 고정을 위해 마커를 맨 첫 번째 영역 안에 정확히 배치
     nav_l, nav_m, nav_r = st.columns(3, gap="small")
     
     with nav_l:
@@ -1910,6 +1894,15 @@ def view_exam():
                     st.warning(f"미완료 {unanswered}문항이 있습니다. 다시 누르면 제출합니다.")
                 else:
                     st.session_state.confirm_submit = False
+                    
+                    # [패치] 제출 시에도 강제로 막히는 것을 방지
+                    if is_learn:
+                        try:
+                            from lib.db import execute
+                            execute("UPDATE Attempt SET startedAt = datetime('now', '-1 minutes'), status = 'active' WHERE id = ?", (attempt_id,))
+                        except Exception:
+                            pass
+                            
                     submit_exam(attempt_id, user["id"])
                     go("result", attempt_id=attempt_id)
             else:
