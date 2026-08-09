@@ -125,7 +125,6 @@ def reset_result_filters():
     """결과 화면의 토글/패널 상태를 초기화한다."""
     st.session_state.result_wrong_only = False
     st.session_state.result_show_topic_mix = False
-    st.session_state.result_wrong_toggle = False
 
 
 def go(view: str, **kwargs):
@@ -1243,23 +1242,6 @@ def app_shell_css():
             width: 100% !important;
             line-height: 1.15 !important;
           }
-          .element-container:has(.exam-nav-next-mark),
-          [data-testid='stElementContainer']:has(.exam-nav-next-mark) {
-            display: none !important;
-            height: 0 !important;
-            margin: 0 !important;
-            padding: 0 !important;
-          }
-          .element-container:has(.exam-nav-next-mark) + div .stButton > button,
-          [data-testid='stElementContainer']:has(.exam-nav-next-mark) + div .stButton > button,
-          .element-container:has(.exam-nav-next-mark) + [data-testid='stElementContainer'] .stButton > button,
-          [data-testid='stElementContainer']:has(.exam-nav-next-mark) + [data-testid='stElementContainer'] .stButton > button {
-            margin-top: 0.75rem !important;
-            font-size: 0.9rem !important;
-            font-weight: 700 !important;
-            height: 2.55rem !important;
-            border-radius: 0.7rem !important;
-          }
           div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) {
             display: flex !important;
             flex-direction: row !important;
@@ -1268,11 +1250,12 @@ def app_shell_css():
             align-items: stretch !important;
             margin: 0.35rem 0 0.15rem !important;
           }
+          /* 이전/다음/홈으로 3등분 처리를 위한 CSS */
           div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) > div {
             flex: 1 1 0 !important;
-            width: 50% !important;
+            width: auto !important;
             min-width: 0 !important;
-            max-width: 50% !important;
+            max-width: none !important;
           }
           div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) .element-container:has(.exam-nav-side-mark),
           div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) [data-testid='stElementContainer']:has(.exam-nav-side-mark) {
@@ -1287,7 +1270,9 @@ def app_shell_css():
           }
           div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) .stButton > button,
           div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) .stButton > button[kind='secondary'],
-          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) .stButton > button[data-testid='baseButton-secondary'] {
+          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) .stButton > button[data-testid='baseButton-secondary'],
+          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) .stButton > button[kind='primary'],
+          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) .stButton > button[data-testid='baseButton-primary'] {
             font-size: 0.75rem !important;
             font-weight: 600 !important;
             padding: 0.35rem 0.5rem !important;
@@ -1342,6 +1327,47 @@ def app_shell_css():
           }
         </style>
         """
+    )
+    # --------- 클릭 효과음(저작권 프리) JS 추가 ---------
+    components.html(
+        """
+        <script>
+        (function() {
+            let win = window.parent || window;
+            if (!win.__audio_click_injected) {
+                win.__audio_click_injected = true;
+                let AudioCtx = win.AudioContext || win.webkitAudioContext;
+                let actx = null;
+                function playClick() {
+                    try {
+                        if (!actx) actx = new AudioCtx();
+                        if (actx.state === 'suspended') actx.resume();
+                        const osc = actx.createOscillator();
+                        const gain = actx.createGain();
+                        osc.connect(gain);
+                        gain.connect(actx.destination);
+                        osc.type = 'sine';
+                        osc.frequency.setValueAtTime(800, actx.currentTime);
+                        osc.frequency.exponentialRampToValueAtTime(300, actx.currentTime + 0.05);
+                        gain.gain.setValueAtTime(0.15, actx.currentTime);
+                        gain.gain.exponentialRampToValueAtTime(0.01, actx.currentTime + 0.05);
+                        osc.start(actx.currentTime);
+                        osc.stop(actx.currentTime + 0.05);
+                    } catch(e) {}
+                }
+                win.document.addEventListener('click', function(e) {
+                    let target = e.target;
+                    let isButton = target.closest('button');
+                    let isRadio = target.closest('[data-testid="stRadio"] label') || (target.tagName && target.tagName.toLowerCase() === 'input' && target.type === 'radio');
+                    if (isButton || isRadio) {
+                        playClick();
+                    }
+                }, true);
+            }
+        })();
+        </script>
+        """,
+        height=0, width=0
     )
 
 
@@ -1656,14 +1682,12 @@ def view_exam():
     if attempt["status"] == "submitted":
         go("result", attempt_id=attempt_id)
 
-    # ----------------- 변경된 부분 시작: 학습 모드 여부 확인 및 시간 초과 방지 -----------------
     is_learn_mode = attempt["revealMode"] == "immediate"
 
     if not is_learn_mode and is_time_expired(attempt):
         submit_exam(attempt_id, user["id"])
         st.warning("제한 시간이 종료되어 자동 제출되었습니다.")
         go("result", attempt_id=attempt_id)
-    # ----------------- 변경된 부분 끝 ----------------------------------------------------------
 
     if st.session_state.q_index == -1:
         st.session_state.q_index = 0
@@ -1695,11 +1719,11 @@ def view_exam():
         else ""
     )
     
-    # ----------------- 변경된 부분 시작: 타이머 UI (시간 제한 없음) -----------------
+    # 시간 표시 UI (학습 모드일 땐 '시간 제한 없음', 시험 모드일 땐 실시간 자바스크립트용 ID 부여)
     timer_display = (
         '<div class="timer-pill" style="background: rgba(201, 162, 39, 0.12); color: #c9a227; border-color: rgba(201, 162, 39, 0.3);">시간 제한 없음</div>'
         if is_learn_mode
-        else f'<div class="timer-pill">남은 시간 {mm:02d}:{ss:02d}</div>'
+        else f'<div id="realtime-timer" class="timer-pill">남은 시간 {mm:02d}:{ss:02d}</div>'
     )
 
     st.markdown(
@@ -1718,7 +1742,6 @@ def view_exam():
         """,
         unsafe_allow_html=True,
     )
-    # ----------------- 변경된 부분 끝 -----------------------------------------------
 
     st.markdown(
         f'<div class="exam-question-anchor" id="exam-question">'
@@ -1791,15 +1814,21 @@ def view_exam():
             if feedback.get("source"):
                 st.caption(f"출처: {feedback['source']}")
 
-    show_primary = is_learn or is_last
-    if show_primary:
-        next_label = (
-            ("학습 종료" if is_learn else "제출하기")
-            if is_last
-            else "다음"
-        )
-        st.markdown('<div class="exam-nav-next-mark"></div>', unsafe_allow_html=True)
-        if st.button(next_label, type="primary", use_container_width=True, key="exam_next"):
+    # ----------------- 네비게이션을 깔끔한 3분할([이전] [다음] [홈으로])로 수정 -----------------
+    st.markdown('<div class="exam-nav-side-mark"></div>', unsafe_allow_html=True)
+    nav_l, nav_m, nav_r = st.columns(3, gap="small")
+    
+    with nav_l:
+        if st.button("이전", disabled=idx <= 0, use_container_width=True, type="secondary", key="exam_prev"):
+            st.session_state.q_index = idx - 1
+            st.session_state.feedback = None
+            request_scroll_top()
+            st.rerun()
+            
+    with nav_m:
+        # 학습 모드의 마지막 문제면 '학습 종료', 아니면 '제출하기' 또는 '다음' 텍스트만 표시
+        next_label = ("학습 종료" if is_learn else "제출하기") if is_last else "다음"
+        if st.button(next_label, type="primary", use_container_width=True, key="exam_next_mid"):
             if is_last:
                 _, qs2 = load_exam(attempt_id, user["id"])
                 unanswered = sum(1 for x in qs2 if x["userAnswer"] is None)
@@ -1815,18 +1844,47 @@ def view_exam():
                 st.session_state.feedback = None
                 request_scroll_top()
                 st.rerun()
-
-    side_l, side_r = st.columns(2, gap="small")
-    with side_l:
-        st.markdown('<div class="exam-nav-side-mark"></div>', unsafe_allow_html=True)
-        if st.button("이전", disabled=idx <= 0, use_container_width=True, type="secondary", key="exam_prev"):
-            st.session_state.q_index = idx - 1
-            st.session_state.feedback = None
-            request_scroll_top()
-            st.rerun()
-    with side_r:
+                
+    with nav_r:
         if st.button("홈으로", use_container_width=True, type="secondary", key="exam_home"):
             go("dashboard")
+
+    # ----------------- 실시간 타이머 작동용 JavaScript (학습 모드가 아닐 때만 작동) -----------------
+    if not is_learn_mode:
+        components.html(
+            f"""
+            <script>
+            (function() {{
+                let doc = window.parent ? window.parent.document : document;
+                let win = window.parent ? window.parent : window;
+                
+                if (win.examTimerInterval) {{
+                    clearInterval(win.examTimerInterval);
+                }}
+                
+                const endsAt = {ends.timestamp()} * 1000;
+                win.examTimerInterval = setInterval(function() {{
+                    const el = doc.getElementById('realtime-timer');
+                    if (!el) return;
+                    
+                    let remain = Math.floor((endsAt - Date.now()) / 1000);
+                    if (remain < 0) remain = 0;
+                    
+                    let m = String(Math.floor(remain / 60)).padStart(2, '0');
+                    let s = String(remain % 60).padStart(2, '0');
+                    el.innerText = "남은 시간 " + m + ":" + s;
+                    
+                    if (remain <= 0) {{
+                        el.style.backgroundColor = "#e63946";
+                        el.style.color = "white";
+                        clearInterval(win.examTimerInterval);
+                    }}
+                }}, 1000);
+            }})();
+            </script>
+            """,
+            height=0, width=0
+        )
 
 
 def view_result():
