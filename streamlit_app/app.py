@@ -378,6 +378,22 @@ def email_input(label: str = "경찰웹메일 ID", key: str = "email_local") -> 
 
 
 def auth_layout(title: str, subtitle: str | None, body):
+    # 로그인/인증 박스를 화면 수직 정중앙에 배치하는 CSS
+    st.html(
+        """
+        <style>
+        [data-testid="stMain"] {
+            display: flex !important;
+            flex-direction: column !important;
+            justify-content: center !important;
+        }
+        .block-container {
+            margin-top: auto !important;
+            margin-bottom: auto !important;
+        }
+        </style>
+        """
+    )
     st.markdown('<div class="auth-form-col">', unsafe_allow_html=True)
     auth_form_header(title, subtitle)
     body()
@@ -1640,10 +1656,14 @@ def view_exam():
     if attempt["status"] == "submitted":
         go("result", attempt_id=attempt_id)
 
-    if is_time_expired(attempt):
+    # ----------------- 변경된 부분 시작: 학습 모드 여부 확인 및 시간 초과 방지 -----------------
+    is_learn_mode = attempt["revealMode"] == "immediate"
+
+    if not is_learn_mode and is_time_expired(attempt):
         submit_exam(attempt_id, user["id"])
         st.warning("제한 시간이 종료되어 자동 제출되었습니다.")
         go("result", attempt_id=attempt_id)
+    # ----------------- 변경된 부분 끝 ----------------------------------------------------------
 
     if st.session_state.q_index == -1:
         st.session_state.q_index = 0
@@ -1658,7 +1678,7 @@ def view_exam():
     ends = attempt_ends_at(attempt)
     remain_sec = max(0, int((ends - datetime.now(timezone.utc)).total_seconds()))
     mm, ss = divmod(remain_sec, 60)
-    is_learn_mode = attempt["revealMode"] == "immediate"
+    
     if attempt["kind"] == "mock":
         mode_label = "모의고사"
         mode_cls = "is-mock"
@@ -1674,6 +1694,14 @@ def view_exam():
         if attempt["kind"] != "mock"
         else ""
     )
+    
+    # ----------------- 변경된 부분 시작: 타이머 UI (시간 제한 없음) -----------------
+    timer_display = (
+        '<div class="timer-pill" style="background: rgba(201, 162, 39, 0.12); color: #c9a227; border-color: rgba(201, 162, 39, 0.3);">시간 제한 없음</div>'
+        if is_learn_mode
+        else f'<div class="timer-pill">남은 시간 {mm:02d}:{ss:02d}</div>'
+    )
+
     st.markdown(
         f"""
         <div class="exam-page-top exam-top" id="exam-page-top">
@@ -1685,11 +1713,12 @@ def view_exam():
             <p style="margin:0.4rem 0 0;color:#0b2a4a;font-weight:700;">진행 {answered}/{attempt["totalCount"]}</p>
             {cat_line}
           </div>
-          <div class="timer-pill">남은 시간 {mm:02d}:{ss:02d}</div>
+          {timer_display}
         </div>
         """,
         unsafe_allow_html=True,
     )
+    # ----------------- 변경된 부분 끝 -----------------------------------------------
 
     st.markdown(
         f'<div class="exam-question-anchor" id="exam-question">'
