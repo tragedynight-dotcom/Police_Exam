@@ -8,76 +8,49 @@
   <link rel="apple-touch-icon" href="icon-512.png">
   <meta name="theme-color" content="#0b2a4a">
   <style>
-    body, html {
-      margin: 0; padding: 0; width: 100%; height: 100%;
-      overflow: hidden; background-color: #ffffff;
-      /* 스마트폰 화면 끌어내림(새로고침) 완벽 차단 */
-      overscroll-behavior-y: none; 
-    }
-    iframe {
-      width: 100%; height: 100%; border: none;
-    }
-    #inapp-guide {
-      display: none; position: fixed; bottom: 0; left: 0; width: 100%;
-      background-color: #e63946; color: #ffffff; text-align: center;
-      padding: 16px 20px; box-sizing: border-box; font-family: "Noto Sans KR", sans-serif;
-      font-size: 0.95rem; line-height: 1.5; z-index: 9999;
-      box-shadow: 0 -4px 12px rgba(0,0,0,0.2);
-    }
+    body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #ffffff; overscroll-behavior-y: contain; }
+    iframe { width: 100%; height: 100%; border: none; }
+    #inapp-guide { display: none; position: fixed; bottom: 0; left: 0; width: 100%; background-color: #e63946; color: #ffffff; text-align: center; padding: 16px 20px; box-sizing: border-box; font-family: "Noto Sans KR", sans-serif; font-size: 0.95rem; line-height: 1.5; z-index: 9999; box-shadow: 0 -4px 12px rgba(0,0,0,0.2); }
     #inapp-guide b { color: #fde047; font-weight: 800; }
   </style>
 </head>
 <body>
   <iframe id="app-iframe" allow="clipboard-write; camera; geolocation; fullscreen"></iframe>
+  <div id="inapp-guide">현재 네이버/카카오 앱에서는 단독 앱 설치가 제한됩니다.<br>우측 하단 메뉴(≡)에서 <b>'다른 브라우저로 열기'</b> 또는 <b>'홈 화면에 추가'</b>를 선택하여 사용해 주시기 바랍니다.</div>
   
-  <div id="inapp-guide">
-    현재 네이버/카카오 앱에서는 단독 앱 설치가 제한됩니다.<br>
-    우측 하단 메뉴(≡)에서 <b>'다른 브라우저로 열기'</b> 또는 <b>'홈 화면에 추가'</b>를 선택하여 사용해 주시기 바랍니다.
-  </div>
-
   <script>
-    // 1. 스트림릿(자식)으로부터 로그인 정보를 넘겨받아 URL에 강제 박제
+    // 스트림릿으로부터 로그인/로그아웃 신호를 수신
     window.addEventListener('message', function(event) {
       if (event.data) {
         if (event.data.type === 'DAMOA_LOGIN' && event.data.token) {
-          try { 
-            localStorage.setItem('damoa_auth', event.data.token);
-            // 주소창 URL에 토큰을 넣어버려서 새로고침해도 절대 안 풀림!
-            var newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname + "?auth=" + event.data.token;
-            window.history.replaceState({path: newUrl}, '', newUrl);
-          } catch(e) {}
+          try { localStorage.setItem('damoa_auth', event.data.token); } catch(e) {}
         } else if (event.data.type === 'DAMOA_LOGOUT') {
-          try { 
-            localStorage.removeItem('damoa_auth');
-            var newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
-            window.history.replaceState({path: newUrl}, '', newUrl);
-          } catch(e) {}
+          try { localStorage.removeItem('damoa_auth'); } catch(e) {}
         }
       }
     });
 
-    // 2. 앱 실행 및 토큰(URL & 로컬스토리지) 복구
     function loadApp() {
         var token = null;
         try { token = localStorage.getItem('damoa_auth'); } catch(e) {}
         
-        var targetUrl = "https://police-exam.streamlit.app/?embed=true";
+        // ★★★ [매우 중요] 아래 큰따옴표 안의 주소를 선생님의 '진짜 스트림릿 주소'로 반드시 바꿔주세요! ★★★
+        var targetUrl = "https://tragedynight-dotcom.github.io/Police_Exam/?embed=true";
+        
         var params = new URLSearchParams(window.location.search);
         var urlAuth = params.get('auth');
         
+        // 주소창에 인증 토큰이 있다면 저장하고 즉시 URL 세탁 (계정 유출 방지)
         if (urlAuth) {
-          token = urlAuth;
-          try { localStorage.setItem('damoa_auth', urlAuth); } catch(e) {}
+            token = urlAuth;
+            try { localStorage.setItem('damoa_auth', urlAuth); } catch(e) {}
+            var cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
+            window.history.replaceState({}, document.title, cleanUrl);
         }
         
         if (token) {
-          targetUrl += "&auth=" + token;
-          if (!urlAuth) {
-              var newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname + "?auth=" + token;
-              window.history.replaceState({path: newUrl}, '', newUrl);
-          }
+            targetUrl += "&auth=" + token;
         }
-        
         var iframe = document.getElementById('app-iframe');
         if (iframe) iframe.src = targetUrl;
     }
@@ -89,11 +62,8 @@
       var guide = document.getElementById('inapp-guide');
       if(guide) guide.style.display = 'block';
     }
-
     if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js').catch(() => {});
-      });
+      window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
     }
   </script>
 </body>
