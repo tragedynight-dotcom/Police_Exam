@@ -14,9 +14,7 @@ if str(ROOT) not in sys.path:
 
 from lib import auth as _auth  # noqa: E402
 
-# =====================================================================
-# 앱 구동을 위한 필수 인증 변수 (에러가 나지 않도록 순정 상태로 복구했습니다)
-# =====================================================================
+# 필수 인증 변수 세팅
 ALLOWED_EMAIL_DOMAIN = _auth.ALLOWED_EMAIL_DOMAIN
 forgot_password = _auth.forgot_password
 full_police_email = _auth.full_police_email
@@ -28,6 +26,33 @@ reset_password = _auth.reset_password
 user_id_from_auth_token = _auth.user_id_from_auth_token
 verify_otp = _auth.verify_otp
 public_user = _auth.public_user
+
+import lib.exam as _lib_exam   # noqa: E402
+
+# [안전한 백엔드 패치] 튜플 에러 및 학습모드 시간초과 방지
+if not hasattr(_lib_exam, "_orig_is_time_expired"):
+    _lib_exam._orig_is_time_expired = _lib_exam.is_time_expired
+    _lib_exam._orig_attempt_ends_at = _lib_exam.attempt_ends_at
+
+    def _safe_is_time_expired(attempt):
+        try:
+            if attempt and attempt["revealMode"] == "immediate":
+                return False
+        except Exception:
+            pass
+        return _lib_exam._orig_is_time_expired(attempt)
+
+    def _safe_attempt_ends_at(attempt):
+        try:
+            if attempt and attempt["revealMode"] == "immediate":
+                from datetime import datetime, timedelta, timezone
+                return datetime.now(timezone.utc) + timedelta(days=365)
+        except Exception:
+            pass
+        return _lib_exam._orig_attempt_ends_at(attempt)
+
+    _lib_exam.is_time_expired = _safe_is_time_expired
+    _lib_exam.attempt_ends_at = _safe_attempt_ends_at
 
 from lib.exam import (  # noqa: E402
     attempt_ends_at,
@@ -84,20 +109,15 @@ def init_state():
 def restore_user_from_url():
     if st.session_state.get("_force_logout"):
         st.session_state.user = None
-        if "auth" not in st.query_params:
-            st.session_state._force_logout = False
+        st.session_state._force_logout = False
         return
+
+    # [수정 완료] 새로고침 시 로그아웃을 방지하기 위해 토큰을 강제로 지우지 않고 읽기만 합니다.
+    token = st.query_params.get("auth")
 
     if st.session_state.get("user"):
-        try:
-            token = make_auth_token(st.session_state.user["id"])
-            if st.query_params.get("auth") != token:
-                st.query_params["auth"] = token
-        except Exception:
-            pass
         return
 
-    token = st.query_params.get("auth")
     if not token:
         return
 
@@ -118,8 +138,10 @@ def login_success(user: dict, view: str = "dashboard", **kwargs):
     st.session_state._force_logout = False
     st.session_state.user = user
     token = make_auth_token(user["id"])
+    
+    # 로그인 토큰을 브라우저에 세팅
     st.query_params["auth"] = token
-    # 부모 창(깃허브)으로 토큰 전송하여 로그아웃 방지
+    
     components.html(f"""
         <script>
         try {{
@@ -135,6 +157,7 @@ def logout():
     st.session_state._force_logout = True
     if "auth" in st.query_params:
         del st.query_params["auth"]
+        
     components.html("""
         <script>
         try {{
@@ -571,7 +594,7 @@ def view_verify():
                 if user:
                     login_success(public_user(user))
                 else:
-                    st.error("사용자를 찾을 수 benchmarks없습니다.")
+                    st.error("사용자를 찾을 수 없습니다.")
             else:
                 st.error(msg)
         if st.button("로그인으로", type="secondary"):
@@ -666,6 +689,32 @@ def app_shell_css():
         """
         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800;900&display=swap">
         <style>
+          /* ================================================== */
+          /* [핵심 패치] 다크모드 방어: 문제와 보기만 명확하게 타겟팅! */
+          /* ================================================== */
+          
+          /* 문제 지문과 보기, 해설은 무조건 남색/검정 계열로 덮기 */
+          div[data-testid='stRadio'] label, .q-stem, .q-stem-wrap, .q-stem-box li, 
+          .exam-question-anchor p, .exam-question-anchor div,
+          .auth-title, .auth-lead, .auth-security p, .auth-security li,
+          .resume-title, .resume-desc, .damoa-brand, .damoa-title, .user-email {
+              color: #132238 !important;
+          }
+          
+          /* 파란색 배너(학습, 모의고사) 안의 글씨는 하얀색/금색 유지 */
+          .topics-hero, .mock-hero, .topics-meta span, .mock-meta span { color: #ffffff !important; }
+          .topics-meta, .mock-desc { color: rgba(255,255,255,0.78) !important; }
+          .topics-kicker, .mock-kicker { color: #c9a227 !important; }
+          .topics-mode-hints p { color: rgba(255,255,255,0.88) !important; background: rgba(255,255,255,0.08) !important; }
+          .topics-mode-hints strong { color: #c9a227 !important; }
+
+          /* 밝은 배경의 배너(전체풀기, 주제별) 안의 글씨는 어두운색 유지 */
+          .card-banner-inner .section-title { color: #132238 !important; }
+          .card-banner-inner .section-desc { color: #5b6b7c !important; }
+          .card-banner-navy .section-label, .card-banner-navy .section-title, .card-banner-navy .section-desc { color: #132238 !important; }
+          
+          /* ================================================== */
+
           [data-testid='stMain'] {
             display: flex !important;
             flex-direction: column !important;
@@ -1634,7 +1683,7 @@ def view_topics():
                 """
                 <div class="resume-inline">
                   <p class="resume-title">진행 중인 시험이 있습니다.</p>
-                  <p class="resume-desc">아래에서 새 주제 시작 시, 이전 시험은 자동 제출 처리됩니다.</p>
+                  <p class="resume-desc">아래에서 새 주제를 시작하면 이전 진행은 자동 제출됩니다.</p>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -1722,7 +1771,6 @@ def view_exam():
 
     is_learn_mode = attempt["revealMode"] == "immediate"
 
-    # [수정] 프론트엔드에서 학습 모드일 경우 강제 제출 로직을 무조건 패스합니다.
     if not is_learn_mode and is_time_expired(attempt):
         submit_exam(attempt_id, user["id"])
         st.warning("제한 시간이 종료되어 자동 제출되었습니다.")
@@ -1811,20 +1859,10 @@ def view_exam():
 
     if selected is not None and not locked and selected != current:
         
-        # [패치] DB 에러를 우회하여 학습 모드에서 프론트엔드 강제 통과
         ok, msg, feedback = save_answer(attempt_id, user["id"], q["id"], selected)
         
         if not ok and is_learn:
             ok = True
-            # 학습 모드에서 10분이 지났다는 백엔드의 불평을 씹고 화면에 즉시 해설을 띄워줍니다.
-            try:
-                from lib.db import execute
-                is_correct = 1 if int(selected) == int(q["answerIndex"]) else 0
-                execute("UPDATE Question SET userAnswer = ?, isCorrect = ? WHERE id = ?", (int(selected), is_correct, q["id"]))
-                execute("UPDATE Attempt SET status = 'active' WHERE id = ?", (attempt_id,))
-            except Exception:
-                pass
-
             st.session_state.feedback = {
                 "isCorrect": int(selected) == int(q["answerIndex"]),
                 "correctIndex": int(q["answerIndex"]),
@@ -1895,14 +1933,6 @@ def view_exam():
                     st.warning(f"미완료 {unanswered}문항이 있습니다. 다시 누르면 제출합니다.")
                 else:
                     st.session_state.confirm_submit = False
-                    
-                    if is_learn:
-                        try:
-                            from lib.db import execute
-                            execute("UPDATE Attempt SET status = 'active' WHERE id = ?", (attempt_id,))
-                        except Exception:
-                            pass
-                            
                     submit_exam(attempt_id, user["id"])
                     go("result", attempt_id=attempt_id)
             else:
@@ -2198,12 +2228,6 @@ def main():
         "result": view_result,
     }
     routes.get(view, view_login)()
-    
-    token = st.query_params.get("auth")
-    if token:
-        components.html(f"<script>try{{window.top.postMessage({{type:'DAMOA_LOGIN', token:'{token}'}}, '*');}}catch(e){{}}</script>", height=0, width=0)
-    elif st.session_state.get("_force_logout"):
-        components.html("<script>try{window.top.postMessage({type:'DAMOA_LOGOUT'}, '*');}catch(e){}</script>", height=0, width=0)
         
     flush_scroll_top()
 
