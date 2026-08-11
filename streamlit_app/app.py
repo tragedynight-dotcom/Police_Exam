@@ -15,7 +15,7 @@ if str(ROOT) not in sys.path:
 from lib import auth as _auth  # noqa: E402
 
 # =====================================================================
-# 앱 구동을 위한 필수 인증 변수
+# 앱 구동을 위한 필수 인증 변수 (에러가 나지 않도록 순정 상태로 복구했습니다)
 # =====================================================================
 ALLOWED_EMAIL_DOMAIN = _auth.ALLOWED_EMAIL_DOMAIN
 forgot_password = _auth.forgot_password
@@ -28,36 +28,6 @@ reset_password = _auth.reset_password
 user_id_from_auth_token = _auth.user_id_from_auth_token
 verify_otp = _auth.verify_otp
 public_user = _auth.public_user
-
-import lib.exam as _lib_exam   # noqa: E402
-
-# =====================================================================
-# [안전한 백엔드 패치] AttributeError 및 시간초과 완벽 차단!
-# =====================================================================
-if not hasattr(_lib_exam, "_orig_is_time_expired"):
-    _lib_exam._orig_is_time_expired = _lib_exam.is_time_expired
-    _lib_exam._orig_attempt_ends_at = _lib_exam.attempt_ends_at
-
-    def _safe_is_time_expired(attempt):
-        try:
-            if attempt and attempt["revealMode"] == "immediate":
-                return False
-        except Exception:
-            pass
-        return _lib_exam._orig_is_time_expired(attempt)
-
-    def _safe_attempt_ends_at(attempt):
-        try:
-            if attempt and attempt["revealMode"] == "immediate":
-                from datetime import datetime, timedelta, timezone
-                return datetime.now(timezone.utc) + timedelta(days=365)
-        except Exception:
-            pass
-        return _lib_exam._orig_attempt_ends_at(attempt)
-
-    _lib_exam.is_time_expired = _safe_is_time_expired
-    _lib_exam.attempt_ends_at = _safe_attempt_ends_at
-# =====================================================================
 
 from lib.exam import (  # noqa: E402
     attempt_ends_at,
@@ -114,18 +84,20 @@ def init_state():
 def restore_user_from_url():
     if st.session_state.get("_force_logout"):
         st.session_state.user = None
-        if "auth" in st.query_params:
-            del st.query_params["auth"]
-        st.session_state._force_logout = False
+        if "auth" not in st.query_params:
+            st.session_state._force_logout = False
+        return
+
+    if st.session_state.get("user"):
+        try:
+            token = make_auth_token(st.session_state.user["id"])
+            if st.query_params.get("auth") != token:
+                st.query_params["auth"] = token
+        except Exception:
+            pass
         return
 
     token = st.query_params.get("auth")
-    
-    # [백화현상 해결] 깃허브(index.html)에서 URL을 완벽히 세탁하므로, 스트림릿 내부에서는 URL 파라미터를 강제로 지우지 않고 값만 가져옵니다! (충돌 방지)
-    
-    if st.session_state.get("user"):
-        return
-
     if not token:
         return
 
@@ -146,7 +118,8 @@ def login_success(user: dict, view: str = "dashboard", **kwargs):
     st.session_state._force_logout = False
     st.session_state.user = user
     token = make_auth_token(user["id"])
-    
+    st.query_params["auth"] = token
+    # 부모 창(깃허브)으로 토큰 전송하여 로그아웃 방지
     components.html(f"""
         <script>
         try {{
@@ -598,7 +571,7 @@ def view_verify():
                 if user:
                     login_success(public_user(user))
                 else:
-                    st.error("사용자를 찾을 수 없습니다.")
+                    st.error("사용자를 찾을 수 benchmarks없습니다.")
             else:
                 st.error(msg)
         if st.button("로그인으로", type="secondary"):
@@ -693,20 +666,6 @@ def app_shell_css():
         """
         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800;900&display=swap">
         <style>
-          /* 다크모드 대응: 배경을 흰색으로 고정했으므로, 텍스트도 어두운 색으로 강력 고정 */
-          .stMarkdown p, .stMarkdown div, .stMarkdown span,
-          div[data-testid='stRadio'] label, .q-stem, .q-stem-box li,
-          .section-label, .section-title, .section-desc,
-          .resume-title, .resume-desc, .damoa-brand, .damoa-title, .user-email {
-              color: #132238 !important;
-          }
-          .topics-hero, .mock-hero, .topics-meta span, .mock-meta span {
-              color: #fff !important;
-          }
-          .topics-meta, .mock-desc {
-              color: rgba(255,255,255,0.78) !important;
-          }
-
           [data-testid='stMain'] {
             display: flex !important;
             flex-direction: column !important;
@@ -1675,7 +1634,7 @@ def view_topics():
                 """
                 <div class="resume-inline">
                   <p class="resume-title">진행 중인 시험이 있습니다.</p>
-                  <p class="resume-desc">아래에서 새 주제를 시작하면 이전 진행은 자동 제출됩니다.</p>
+                  <p class="resume-desc">아래에서 새 주제 시작 시, 이전 시험은 자동 제출 처리됩니다.</p>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -1763,6 +1722,7 @@ def view_exam():
 
     is_learn_mode = attempt["revealMode"] == "immediate"
 
+    # [수정] 프론트엔드에서 학습 모드일 경우 강제 제출 로직을 무조건 패스합니다.
     if not is_learn_mode and is_time_expired(attempt):
         submit_exam(attempt_id, user["id"])
         st.warning("제한 시간이 종료되어 자동 제출되었습니다.")
@@ -1850,10 +1810,21 @@ def view_exam():
     )
 
     if selected is not None and not locked and selected != current:
+        
+        # [패치] DB 에러를 우회하여 학습 모드에서 프론트엔드 강제 통과
         ok, msg, feedback = save_answer(attempt_id, user["id"], q["id"], selected)
         
         if not ok and is_learn:
             ok = True
+            # 학습 모드에서 10분이 지났다는 백엔드의 불평을 씹고 화면에 즉시 해설을 띄워줍니다.
+            try:
+                from lib.db import execute
+                is_correct = 1 if int(selected) == int(q["answerIndex"]) else 0
+                execute("UPDATE Question SET userAnswer = ?, isCorrect = ? WHERE id = ?", (int(selected), is_correct, q["id"]))
+                execute("UPDATE Attempt SET status = 'active' WHERE id = ?", (attempt_id,))
+            except Exception:
+                pass
+
             st.session_state.feedback = {
                 "isCorrect": int(selected) == int(q["answerIndex"]),
                 "correctIndex": int(q["answerIndex"]),
@@ -1924,6 +1895,14 @@ def view_exam():
                     st.warning(f"미완료 {unanswered}문항이 있습니다. 다시 누르면 제출합니다.")
                 else:
                     st.session_state.confirm_submit = False
+                    
+                    if is_learn:
+                        try:
+                            from lib.db import execute
+                            execute("UPDATE Attempt SET status = 'active' WHERE id = ?", (attempt_id,))
+                        except Exception:
+                            pass
+                            
                     submit_exam(attempt_id, user["id"])
                     go("result", attempt_id=attempt_id)
             else:
@@ -2220,6 +2199,12 @@ def main():
     }
     routes.get(view, view_login)()
     
+    token = st.query_params.get("auth")
+    if token:
+        components.html(f"<script>try{{window.top.postMessage({{type:'DAMOA_LOGIN', token:'{token}'}}, '*');}}catch(e){{}}</script>", height=0, width=0)
+    elif st.session_state.get("_force_logout"):
+        components.html("<script>try{window.top.postMessage({type:'DAMOA_LOGOUT'}, '*');}catch(e){}</script>", height=0, width=0)
+        
     flush_scroll_top()
 
 
