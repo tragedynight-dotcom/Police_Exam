@@ -14,9 +14,7 @@ if str(ROOT) not in sys.path:
 
 from lib import auth as _auth  # noqa: E402
 
-# =====================================================================
-# 앱 구동을 위한 필수 인증 변수
-# =====================================================================
+# 필수 인증 변수 세팅
 ALLOWED_EMAIL_DOMAIN = _auth.ALLOWED_EMAIL_DOMAIN
 forgot_password = _auth.forgot_password
 full_police_email = _auth.full_police_email
@@ -31,7 +29,7 @@ public_user = _auth.public_user
 
 import lib.exam as _lib_exam   # noqa: E402
 
-# [안전한 백엔드 패치] DB 튜플 에러 차단
+# [안전한 백엔드 패치] 튜플 에러 및 학습모드 시간초과 방지
 if not hasattr(_lib_exam, "_orig_is_time_expired"):
     _lib_exam._orig_is_time_expired = _lib_exam.is_time_expired
     _lib_exam._orig_attempt_ends_at = _lib_exam.attempt_ends_at
@@ -114,7 +112,7 @@ def restore_user_from_url():
         st.session_state._force_logout = False
         return
 
-    # [새로고침 로그아웃 방지] 주소창의 토큰을 절대 지우지 않습니다. F5를 눌러도 계속 로그인 유지!
+    # 새로고침 시 로그아웃 방지
     token = st.query_params.get("auth")
 
     if st.session_state.get("user"):
@@ -394,7 +392,6 @@ def auth_form_header(title: str, subtitle: str | None = None):
         unsafe_allow_html=True,
     )
 
-# [수정 완료] 아이디칸 기본값 설정을 위한 value 추가
 def email_input(label: str = "경찰웹메일 ID", key: str = "email_local", value: str = "") -> str:
     st.markdown(
         f'<p style="margin:0 0 0.3rem;font-size:0.9rem;font-weight:500;color:#132238;">{label}</p>',
@@ -449,7 +446,6 @@ def view_login():
             _login_form = st.form("login_form", clear_on_submit=False, border=False)
             
         with _login_form:
-            # [수정 완료] 로그인 화면 기본값 trustkimjs 적용
             email = email_input(key="login_local", value="trustkimjs")
             password = st.text_input(
                 "비밀번호",
@@ -614,8 +610,11 @@ def app_shell_css():
         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800;900&display=swap">
         <style>
           /* ================================================== */
-          /* [핵심 패치 1] 다크모드 방어 (배너 안쪽과 바깥쪽 분리) */
-          /* 문제 풀이 텍스트, 로그인 창 글씨 등은 무조건 진하게 */
+          /* [초정밀 패치] 다크모드 방어: 문제 글씨는 어둡게, 
+             파란 배너 안쪽 글씨는 완벽하게 흰색/금색으로 부활! */
+          /* ================================================== */
+          
+          /* 1. 배경을 강제 흰색으로 했으므로, 모든 기본 텍스트는 진남색으로 덮어버림 */
           .stMarkdown p, .stMarkdown div, .stMarkdown span,
           div[data-testid='stRadio'] label, .q-stem, .q-stem-wrap, .q-stem-box li, 
           .exam-question-anchor p, .exam-question-anchor div,
@@ -624,25 +623,35 @@ def app_shell_css():
               color: #132238 !important;
           }
           
-          /* 파란색/배경 배너 내부의 글씨는 하얀색/금색 유지 (보호색 해결!) */
-          .topics-panel-inner *, .mock-panel-inner * {
-              color: #ffffff !important;
-          }
-          .topics-kicker, .mock-kicker, .topics-mode-hints strong {
+          /* 2. [가장 중요] 파란색 배너 안의 텍스트는 위 1번 규칙을 뚫고 나오도록 초정밀 타겟팅! */
+          .stMarkdown .topics-panel-inner p.topics-kicker,
+          .stMarkdown .mock-panel-inner p.mock-kicker {
               color: #c9a227 !important;
           }
-          .topics-meta, .mock-desc {
+          .stMarkdown .topics-panel-inner p.topics-hero,
+          .stMarkdown .mock-panel-inner p.mock-hero,
+          .stMarkdown .topics-panel-inner p.topics-meta span,
+          .stMarkdown .mock-panel-inner p.mock-meta span,
+          .stMarkdown .topics-panel-inner div.topics-mode-hints p strong {
+              color: #ffffff !important;
+          }
+          .stMarkdown .topics-panel-inner p.topics-meta,
+          .stMarkdown .mock-panel-inner p.mock-desc {
               color: rgba(255,255,255,0.78) !important;
           }
-          .topics-mode-hints p {
-              background: rgba(255,255,255,0.08) !important;
+          .stMarkdown .topics-panel-inner div.topics-mode-hints p {
               color: rgba(255,255,255,0.88) !important;
+              background: rgba(255,255,255,0.08) !important;
           }
 
-          /* 밝은 배경 배너 안의 글자는 어둡게 */
-          .card-banner-inner .section-title { color: #132238 !important; }
-          .card-banner-inner .section-desc { color: #5b6b7c !important; }
-          .card-banner-navy .section-label, .card-banner-navy .section-title, .card-banner-navy .section-desc { color: #132238 !important; }
+          /* 3. 밝은 배경의 배너(전체풀기, 주제별) 안의 글씨도 확실히 어둡게 고정 */
+          .stMarkdown .card-banner-inner p.section-title,
+          .stMarkdown .card-banner-navy p.section-label { 
+              color: #132238 !important; 
+          }
+          .stMarkdown .card-banner-inner p.section-desc { 
+              color: #5b6b7c !important; 
+          }
           /* ================================================== */
 
           [data-testid='stMain'] {
@@ -857,7 +866,7 @@ def app_shell_css():
             font-size: 0.78rem !important;
           }
           
-          /* [핵심 패치 2] 버튼 1개일 때를 대비하여 넓이 100% 고정 */
+          /* 버튼 넓이 100% 고정 */
           div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) {
             display: flex !important;
             flex-direction: row !important;
@@ -890,6 +899,7 @@ def app_shell_css():
             font-weight: 800 !important;
             font-family: "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif !important;
             letter-spacing: -0.01em !important;
+            color: #071c33 !important; 
           }
           div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[kind='primary'],
           div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[data-testid='baseButton-primary'] {
@@ -899,7 +909,6 @@ def app_shell_css():
             min-height: 2.75rem !important;
             width: 100% !important;
             background: #c9a227 !important;
-            color: #071c33 !important;
             border: none !important;
           }
           
@@ -960,6 +969,7 @@ def app_shell_css():
             font-weight: 800 !important;
             font-family: "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif !important;
             letter-spacing: -0.01em !important;
+            color: #0b2a4a !important; 
           }
           div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button,
           div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[kind='primary'],
@@ -970,7 +980,6 @@ def app_shell_css():
             min-height: 2.75rem !important;
             width: 100% !important;
             background: #ffffff !important;
-            color: #0b2a4a !important;
             border: 1px solid rgba(255,255,255,0.85) !important;
           }
           .card-banner-inner {
@@ -1791,7 +1800,7 @@ def view_exam():
             st.rerun()
             
     with nav_m:
-        next_label = ("학습 종료" if is_learn_mode else "제출하기") if is_last else "다음"
+        next_label = "제출하기" if is_last else "다음"
         if st.button(next_label, type="secondary", use_container_width=True, key="exam_next_mid"):
             if is_last:
                 _, qs2 = load_exam(attempt_id, user["id"])
@@ -2097,8 +2106,6 @@ def main():
     }
     routes.get(view, view_login)()
     
-    # 여기서 URL을 강제로 지우지 않음으로써 새로고침해도 로그아웃되지 않게 보호합니다.
-        
     flush_scroll_top()
 
 
