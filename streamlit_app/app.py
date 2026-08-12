@@ -982,6 +982,32 @@ def app_shell_css():
             margin: 0 !important;
           }
           
+          /* [완벽 수정 반영] 두 메인 버튼 모두 원래의 '하얀 바탕 + 남색(기본) 글씨'로 통일하여 지정! (빨간색 삭제) */
+          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[kind='primary'],
+          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[data-testid='baseButton-primary'],
+          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[kind='primary'],
+          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[data-testid='baseButton-primary'] {
+            padding: 0.65rem 0.7rem !important;
+            border-radius: 0.7rem !important;
+            height: 2.75rem !important;
+            min-height: 2.75rem !important;
+            width: 100% !important;
+            background-color: #ffffff !important;
+            color: #0b2a4a !important;
+            border: none !important;
+          }
+          
+          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[kind='primary'] *,
+          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[data-testid='baseButton-primary'] *,
+          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[kind='primary'] *,
+          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[data-testid='baseButton-primary'] * {
+            font-size: 0.95rem !important;
+            font-weight: 800 !important;
+            font-family: "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif !important;
+            letter-spacing: -0.01em !important;
+            color: #0b2a4a !important;
+          }
+          
           div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) {
             border: 1px solid rgba(201, 162, 39, 0.32) !important;
             background:
@@ -1032,32 +1058,6 @@ def app_shell_css():
           div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton {
             width: 100% !important;
             margin: 0 !important;
-          }
-          
-          /* [요청 반영] 주제별 모의고사 버튼과 실전 모의고사 버튼을 똑같이 하얀 바탕/남색 글씨/테두리로 고정! */
-          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[kind='primary'],
-          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[data-testid='baseButton-primary'],
-          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[kind='primary'],
-          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[data-testid='baseButton-primary'] {
-            padding: 0.65rem 0.7rem !important;
-            border-radius: 0.7rem !important;
-            height: 2.75rem !important;
-            min-height: 2.75rem !important;
-            width: 100% !important;
-            background: #ffffff !important;
-            color: #0b2a4a !important;
-            border: 1px solid rgba(255,255,255,0.85) !important;
-          }
-          
-          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[kind='primary'] *,
-          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[data-testid='baseButton-primary'] *,
-          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[kind='primary'] *,
-          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[data-testid='baseButton-primary'] * {
-            font-size: 0.95rem !important;
-            font-weight: 800 !important;
-            font-family: "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif !important;
-            letter-spacing: -0.01em !important;
-            color: #0b2a4a !important;
           }
           
           .card-banner-inner {
