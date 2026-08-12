@@ -114,21 +114,21 @@ def init_state():
 def restore_user_from_url():
     if st.session_state.get("_force_logout"):
         st.session_state.user = None
-        if "auth" not in st.query_params:
-            st.session_state._force_logout = False
+        st.session_state._force_logout = False
         return
 
-    # 첫 페이지 정상 작동하던 새로고침 유지 로직 원상 복구!
+    # 새로고침 시 로그아웃을 방지하기 위해 URL의 꼬리표(토큰)를 지우지 않습니다.
+    token = st.query_params.get("auth")
+
     if st.session_state.get("user"):
         try:
-            token = make_auth_token(st.session_state.user["id"])
-            if st.query_params.get("auth") != token:
-                st.query_params["auth"] = token
+            token_new = make_auth_token(st.session_state.user["id"])
+            if st.query_params.get("auth") != token_new:
+                st.query_params["auth"] = token_new
         except Exception:
             pass
         return
 
-    token = st.query_params.get("auth")
     if not token:
         return
 
@@ -149,6 +149,7 @@ def login_success(user: dict, view: str = "dashboard", **kwargs):
     st.session_state._force_logout = False
     st.session_state.user = user
     token = make_auth_token(user["id"])
+    
     st.query_params["auth"] = token
     components.html(f"""
         <script>
@@ -165,6 +166,7 @@ def logout():
     st.session_state._force_logout = True
     if "auth" in st.query_params:
         del st.query_params["auth"]
+        
     components.html("""
         <script>
         try {{
@@ -228,7 +230,6 @@ def flush_scroll_top():
         block_js = json.dumps(block)
         components.html(
             f"""
-            <!-- scroll:{nonce} -->
             <script>
             (function () {{
               let doc = document;
@@ -255,15 +256,12 @@ def flush_scroll_top():
               setTimeout(toTarget, 350);
             }})();
             </script>
-            """,
-            height=0,
-            width=0,
+            """, height=0, width=0
         )
         return
 
     components.html(
         f"""
-        <!-- scroll-top:{nonce} -->
         <script>
         (function () {{
           let doc = document;
@@ -305,26 +303,20 @@ def flush_scroll_top():
               cur = cur.parentElement;
             }}
             if (anchor) {{
-              try {{
-                anchor.scrollIntoView({{ behavior: 'auto', block: 'start' }});
-              }} catch (e) {{}}
+              try {{ anchor.scrollIntoView({{ behavior: 'auto', block: 'start' }}); }} catch (e) {{}}
             }}
             win.scrollTo(0, 0);
           }}
           const until = Date.now() + 900;
           function lockTop() {{
             toTop();
-            if (Date.now() < until) {{
-              requestAnimationFrame(lockTop);
-            }}
+            if (Date.now() < until) {{ requestAnimationFrame(lockTop); }}
           }}
           lockTop();
           [50, 120, 250, 450, 700].forEach(function (t) {{ setTimeout(toTop, t); }});
         }})();
         </script>
-        """,
-        height=0,
-        width=0,
+        """, height=0, width=0
     )
 
 
@@ -405,8 +397,8 @@ def auth_form_header(title: str, subtitle: str | None = None):
         unsafe_allow_html=True,
     )
 
-
-def email_input(label: str = "경찰웹메일 ID", key: str = "email_local", value: str = "") -> str:
+# 로그인 아이디 기본값 trustkimjs 고정
+def email_input(label: str = "경찰웹메일 ID", key: str = "email_local", value: str = "trustkimjs") -> str:
     st.markdown(
         f'<p style="margin:0 0 0.3rem;font-size:0.9rem;font-weight:500;color:#132238;">{label}</p>',
         unsafe_allow_html=True,
@@ -415,8 +407,8 @@ def email_input(label: str = "경찰웹메일 ID", key: str = "email_local", val
     with c1:
         local = st.text_input(
             label,
-            key=key,
             value=value,
+            key=key,
             placeholder="경찰웹메일 ID",
             label_visibility="collapsed",
         )
@@ -455,34 +447,15 @@ def auth_layout(title: str, subtitle: str | None, body):
 def view_login():
     def body():
         try:
-            _login_form = st.form(
-                "login_form",
-                clear_on_submit=False,
-                border=False,
-                enter_to_submit=False,
-            )
+            _login_form = st.form("login_form", clear_on_submit=False, border=False, enter_to_submit=False)
         except TypeError:
-            _login_form = st.form(
-                "login_form",
-                clear_on_submit=False,
-                border=False,
-            )
+            _login_form = st.form("login_form", clear_on_submit=False, border=False)
+            
         with _login_form:
-            # 로그인 창에만 기본 아이디 trustkimjs 부여
             email = email_input(key="login_local", value="trustkimjs")
-            password = st.text_input(
-                "비밀번호",
-                type="password",
-                key="login_pw",
-                placeholder="비밀번호",
-            )
-            submitted = st.form_submit_button(
-                "로그인",
-                type="primary",
-                use_container_width=True,
-            )
+            password = st.text_input("비밀번호", type="password", key="login_pw", placeholder="비밀번호")
+            submitted = st.form_submit_button("로그인", type="primary", use_container_width=True)
             if submitted:
-                # 무조건 소문자 치환하여 에러 방지
                 email_safe = email.strip().lower()
                 user, msg, needs_verify = login_user(email_safe, password)
                 if user:
@@ -496,102 +469,58 @@ def view_login():
         st.markdown('<div style="height:0.25rem"></div>', unsafe_allow_html=True)
         r1a, r1b = st.columns([1.55, 1], gap="small")
         with r1a:
-            st.markdown(
-                '<p class="auth-link-label">계정이 없으신가요?&nbsp;</p>',
-                unsafe_allow_html=True,
-            )
+            st.markdown('<p class="auth-link-label">계정이 없으신가요?&nbsp;</p>', unsafe_allow_html=True)
         with r1b:
             if st.button("회원가입", type="secondary", key="login_to_register"):
                 go("register")
 
         r2a, r2b = st.columns([1.9, 1.2], gap="small")
         with r2a:
-            st.markdown(
-                '<p class="auth-link-label">비밀번호를 잊어버렸다면?&nbsp;</p>',
-                unsafe_allow_html=True,
-            )
+            st.markdown('<p class="auth-link-label">비밀번호를 잊어버렸다면?&nbsp;</p>', unsafe_allow_html=True)
         with r2b:
             if st.button("비밀번호 재설정", type="secondary", key="login_to_forgot"):
                 go("forgot")
 
-    auth_layout(
-        "로그인",
-        "회원가입을 눌러 경찰 웹메일로 경찰 인증 후 사용하세요.",
-        body,
-    )
+    auth_layout("로그인", "회원가입을 눌러 경찰 웹메일로 경찰 인증 후 사용하세요.", body)
 
 
 def view_register():
     def body():
         try:
-            _reg_form = st.form(
-                "register_form",
-                clear_on_submit=False,
-                border=False,
-                enter_to_submit=False,
-            )
+            _reg_form = st.form("register_form", clear_on_submit=False, border=False, enter_to_submit=False)
         except TypeError:
-            _reg_form = st.form(
-                "register_form",
-                clear_on_submit=False,
-                border=False,
-            )
+            _reg_form = st.form("register_form", clear_on_submit=False, border=False)
         with _reg_form:
             name = st.text_input("닉네임", key="reg_name", placeholder="닉네임")
             organization = st.text_input("소속", key="reg_org", placeholder="소속")
-            email = email_input(key="reg_local")
-            password = st.text_input(
-                "비밀번호 (8자 이상)",
-                type="password",
-                key="reg_pw",
-                placeholder="비밀번호",
-            )
-            submitted = st.form_submit_button(
-                "인증번호 받기",
-                type="primary",
-                use_container_width=True,
-            )
+            email = email_input(key="reg_local", value="")
+            password = st.text_input("비밀번호 (8자 이상)", type="password", key="reg_pw", placeholder="비밀번호")
+            submitted = st.form_submit_button("인증번호 받기", type="primary", use_container_width=True)
             if submitted:
                 email_safe = email.strip().lower()
                 ok, msg, code = register_user(name, email_safe, password, organization)
                 if ok and code:
                     try:
                         from lib.mail import send_otp_email
-
                         send_otp_email(email_safe, code)
                         st.session_state.dev_otp = None
-                        st.success(
-                            "인증번호를 이메일로 발송했습니다. 메일함을 확인해 주세요."
-                        )
+                        st.success("인증번호를 이메일로 발송했습니다. 메일함을 확인해 주세요.")
                         go("verify", verify_email=email_safe)
                     except Exception as e:
-                        from lib.mail import MAIL_MODULE_VERSION as _mv
-
-                        st.error(
-                            f"인증번호 메일 발송에 실패했습니다. "
-                            f"[mail {_mv}] {type(e).__name__}: {e!s}"
-                        )
+                        st.error("인증번호 발송에 실패했습니다.")
                 elif ok:
-                    st.error("인증번호 발급에 실패했습니다. 다시 시도해 주세요.")
+                    st.error("인증번호 발급에 실패했습니다.")
                 else:
                     st.error(msg)
         if st.button("로그인으로", type="secondary", key="reg_to_login"):
             go("login")
 
-    auth_layout(
-        "회원가입",
-        "경찰청 웹메일(@police.go.kr)로 가입 후 인증번호를 받아 주세요.",
-        body,
-    )
+    auth_layout("회원가입", "경찰청 웹메일(@police.go.kr)로 가입 후 인증번호를 받아 주세요.", body)
 
 
 def view_verify():
     def body():
-        email = st.text_input(
-            "이메일",
-            value=st.session_state.verify_email,
-            key="verify_email_input",
-        )
+        email = st.text_input("이메일", value=st.session_state.verify_email, key="verify_email_input")
         code = st.text_input("인증번호 6자리", max_chars=6, key="verify_code", placeholder="6자리")
         if st.button("인증 완료", type="primary", use_container_width=True):
             email_safe = email.strip().lower()
@@ -599,11 +528,7 @@ def view_verify():
             if ok:
                 st.session_state.dev_otp = None
                 from lib.db import fetch_one
-
-                user = fetch_one(
-                    "SELECT * FROM User WHERE email = ?",
-                    (email_safe,),
-                )
+                user = fetch_one("SELECT * FROM User WHERE email = ?", (email_safe,))
                 if user:
                     login_success(public_user(user))
                 else:
@@ -618,46 +543,30 @@ def view_verify():
 
 def view_forgot():
     def body():
-        email = email_input(key="forgot_local")
+        email = email_input(key="forgot_local", value="")
         if st.button("인증번호 받기", type="primary", use_container_width=True):
             email_safe = email.strip().lower()
             ok, msg, code = forgot_password(email_safe)
             if ok and code:
                 try:
-                    from lib.mail import MAIL_MODULE_VERSION, send_otp_email
-
+                    from lib.mail import send_otp_email
                     send_otp_email(email_safe, code)
                     st.session_state.dev_otp = None
-                    st.success("인증번호를 이메일로 발송했습니다. 메일함을 확인해 주세요.")
+                    st.success("인증번호를 발송했습니다.")
                     go("reset", reset_email=email_safe)
                 except Exception as e:
-                    from lib.mail import MAIL_MODULE_VERSION as _mv
-
-                    st.error(
-                        f"인증번호 메일 발송에 실패했습니다. "
-                        f"[mail {_mv}] {type(e).__name__}: {e!s}"
-                    )
-            elif ok:
-                st.error("인증번호 발급에 실패했습니다. 다시 시도해 주세요.")
+                    st.error("메일 발송에 실패했습니다.")
             else:
                 st.error(msg)
         if st.button("로그인으로", type="secondary"):
             go("login")
 
-    auth_layout(
-        "비밀번호 재설정",
-        "가입한 경찰 웹메일로 인증번호를 받아 새 비밀번호를 설정하세요.",
-        body,
-    )
+    auth_layout("비밀번호 재설정", "가입한 웹메일로 인증번호를 받아 새 비밀번호를 설정하세요.", body)
 
 
 def view_reset():
     def body():
-        email = st.text_input(
-            "이메일",
-            value=st.session_state.reset_email,
-            key="reset_email_input",
-        )
+        email = st.text_input("이메일", value=st.session_state.reset_email, key="reset_email_input")
         code = st.text_input("인증번호 6자리", max_chars=6, key="reset_code", placeholder="6자리")
         pw = st.text_input("새 비밀번호 (8자 이상)", type="password", key="reset_pw")
         pw2 = st.text_input("새 비밀번호 확인", type="password", key="reset_pw2")
@@ -681,20 +590,11 @@ def view_reset():
 
 def view_mail_setup():
     def body():
-        st.markdown(
-            """
-            인증번호는 이메일로만 발송됩니다. 화면에 표시하지 않습니다.
-
-            Streamlit Cloud **Secrets** 또는 환경변수에 메일 설정을 넣어 주세요.
-
-            - `EMAILJS_SERVICE_ID`, `EMAILJS_TEMPLATE_ID`, `EMAILJS_PUBLIC_KEY`, `EMAILJS_PRIVATE_KEY`
-            - 또는 `MAIL_USER`, `MAIL_PASS` (필요 시 `MAIL_HOST`, `MAIL_PORT`)
-            """
-        )
+        st.markdown("메일 발송 설정이 필요할 때 참고하세요.")
         if st.button("로그인으로", type="secondary"):
             go("login")
 
-    auth_layout("메일 설정 안내", "이메일 발송 설정이 필요할 때 참고하세요.", body)
+    auth_layout("메일 설정 안내", "", body)
 
 
 # ---------- App views ----------
@@ -921,6 +821,8 @@ def app_shell_css():
             width: 100% !important;
             margin: 0 !important;
           }
+          
+          /* [변경 포인트] 주제별 모의고사 버튼을 실전 모의고사 버튼과 똑같이 (흰 바탕/남색 글씨/테두리) 지정 */
           div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[kind='primary'],
           div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[data-testid='baseButton-primary'] {
             padding: 0.65rem 0.7rem !important;
@@ -928,8 +830,8 @@ def app_shell_css():
             height: 2.75rem !important;
             min-height: 2.75rem !important;
             width: 100% !important;
-            background: #c9a227 !important;
-            border: none !important;
+            background: #ffffff !important;
+            border: 1px solid rgba(255,255,255,0.85) !important;
             font-size: 0.95rem !important;
             font-weight: 800 !important;
             letter-spacing: -0.01em !important;
@@ -1283,31 +1185,30 @@ def app_shell_css():
             line-height: 1.2 !important;
           }
           
-          /* ★★★ 다크모드에서 흰 배경에 글씨가 안보이는 현상을 해결하는 가장 얌전한(안전한) 타겟팅 코드 ★★★ */
+          /* ★★★ 다크모드에서 흰 배경에 글씨가 안보이는 현상을 해결하는 가장 안전한 타겟팅 코드 ★★★ */
           .block-container, .q-stem, div[data-testid='stRadio'] label, .stMarkdown p, .stMarkdown span {
               color: #132238; 
           }
-          /* 위에서 글씨를 어둡게 바꿨으므로 파란/노란 배너 안에 있던 글씨들은 강제로 밝은 원래 색상을 유지시킴 */
+          /* 위에서 글씨를 어둡게 바꿨으므로 파란 배너 안에 있던 글씨들은 강제로 밝은 원래 색상을 유지시킴 */
           .topics-panel-inner *, .mock-panel-inner * { color: #ffffff !important; }
           .topics-panel-inner .topics-kicker, .mock-panel-inner .mock-kicker, .topics-panel-inner strong { color: #c9a227 !important; }
           .topics-panel-inner .topics-meta, .mock-panel-inner .mock-desc { color: rgba(255,255,255,0.78) !important; }
           .topics-mode-hints p { color: rgba(255,255,255,0.88) !important; }
           
-          /* 테마 모의고사 버튼들의 디자인 */
+          /* 테마 모의고사 버튼의 글씨 색상까지 완벽 지정! */
           .topics-mode-hints { display: grid !important; grid-template-columns: 1fr !important; gap: 0.45rem !important; margin-top: 0.85rem !important; }
           div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) > div {
             flex: 1 1 100% !important; width: 100% !important; min-width: 0 !important; max-width: 100% !important;
           }
-          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[kind='primary'],
-          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[data-testid='baseButton-primary'],
-          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[kind='primary'] * {
-            color: #071c33 !important; 
+          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[kind='primary'] *,
+          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[kind='primary'] * {
+            color: #0b2a4a !important; 
           }
         </style>
         """
     )
     
-    # --------- 오디오 버튼음용 원본 자바스크립트 ---------
+    # --------- 오디오 버튼음용 오리지널 자바스크립트 ---------
     components.html(
         """
         <script>
@@ -1367,7 +1268,7 @@ def app_shell_css():
                 }, true);
             }
 
-            // 하단 3버튼 가로 1줄 고정 강제 적용 (오리지널 코드)
+            // 하단 3버튼 가로 1줄 고정 강제 적용 (오리지널 코드 유지)
             setInterval(function() {
                 var marks = doc.querySelectorAll('.exam-nav-side-mark, .result-actions-mark');
                 marks.forEach(function(mark) {
@@ -1519,7 +1420,7 @@ def view_dashboard():
     )
     if not recent:
         st.markdown(
-            '<p class="recent-empty">학습 기록이 없습니다. 학습·시험·모의고사를 완료하면 여기에 표시됩니다.</p>',
+            '<p class="recent-empty">학습 기록이 없습니다. 시험이나 모의고사를 완료하면 여기에 표시됩니다.</p>',
             unsafe_allow_html=True,
         )
     else:
@@ -1709,13 +1610,9 @@ def view_exam():
         else ""
     )
     
-    timer_display = (
-        '<div id="realtime-timer" class="timer-pill">남은 시간 {mm:02d}:{ss:02d}</div>'
-    )
-
     st.markdown(
         f"""
-        <div class="exam-page-top exam-top" id="exam-page-top">
+        <div class="exam-page-top exam-top" id="exam-page-top" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
           <div>
             <p class="damoa-brand" style="margin:0;">
               지역 경찰 실무 역량 평가 DaMoa
@@ -1724,7 +1621,7 @@ def view_exam():
             <p style="margin:0.4rem 0 0;color:#0b2a4a;font-weight:700;">진행 {answered}/{attempt["totalCount"]}</p>
             {cat_line}
           </div>
-          {timer_display}
+          <div id="realtime-timer" class="timer-pill">남은 시간 {mm:02d}:{ss:02d}</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -1758,7 +1655,6 @@ def view_exam():
     )
 
     if selected is not None and not locked and selected != current:
-        
         ok, msg, feedback = save_answer(attempt_id, user["id"], q["id"], selected)
         
         if ok:
@@ -2094,31 +1990,8 @@ def view_result():
     result_action_row("result_bottom")
 
 
-def email_input(label: str = "경찰웹메일 ID", key: str = "email_local", value: str = "") -> str:
-    st.markdown(
-        f'<p style="margin:0 0 0.3rem;font-size:0.9rem;font-weight:500;color:#132238;">{label}</p>',
-        unsafe_allow_html=True,
-    )
-    c1, c2 = st.columns([6, 1.35], gap="small")
-    with c1:
-        local = st.text_input(
-            label,
-            value=value,
-            key=key,
-            placeholder="경찰웹메일 ID",
-            label_visibility="collapsed",
-        )
-    with c2:
-        st.markdown(
-            f'<div class="email-domain-mark">@{ALLOWED_EMAIL_DOMAIN}</div>',
-            unsafe_allow_html=True,
-        )
-    return full_police_email(local or "")
-
-
 def main():
     init_state()
-    app_shell_css()
     restore_user_from_url()
     view = st.session_state.view
     if st.session_state.user and view in {"login", "register"}:
