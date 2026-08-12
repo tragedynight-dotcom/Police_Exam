@@ -32,7 +32,7 @@ public_user = _auth.public_user
 import lib.exam as _lib_exam   # noqa: E402
 
 # =====================================================================
-# [안전한 백엔드 패치] DB 튜플 에러 완벽 차단
+# [안전한 백엔드 패치] DB 튜플 에러 완벽 차단 방어막
 # =====================================================================
 if not hasattr(_lib_exam, "_orig_is_time_expired"):
     _lib_exam._orig_is_time_expired = _lib_exam.is_time_expired
@@ -84,6 +84,10 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
+_CSS = (Path(__file__).resolve().parent / "styles.css").read_text(encoding="utf-8")
+st.html(f"<style>{_CSS}</style>")
+
+
 def init_state():
     defaults = {
         "view": "login",
@@ -113,7 +117,7 @@ def restore_user_from_url():
         st.session_state._force_logout = False
         return
 
-    # 새로고침 시 로그아웃 방지 (URL 토큰 유지)
+    # 새로고침 시 로그아웃을 방지하기 위해 URL의 꼬리표(토큰)를 지우지 않습니다.
     token = st.query_params.get("auth")
 
     if st.session_state.get("user"):
@@ -393,7 +397,6 @@ def auth_form_header(title: str, subtitle: str | None = None):
         unsafe_allow_html=True,
     )
 
-# 로그인 아이디 기본값 trustkimjs 고정
 def email_input(label: str = "경찰웹메일 ID", key: str = "email_local", value: str = "trustkimjs") -> str:
     st.markdown(
         f'<p style="margin:0 0 0.3rem;font-size:0.9rem;font-weight:500;color:inherit;">{label}</p>',
@@ -489,6 +492,7 @@ def view_register():
         with _reg_form:
             name = st.text_input("닉네임", key="reg_name", placeholder="닉네임")
             organization = st.text_input("소속", key="reg_org", placeholder="소속")
+            # 회원가입 창은 빈칸으로 시작
             email = email_input(key="reg_local", value="")
             password = st.text_input("비밀번호 (8자 이상)", type="password", key="reg_pw", placeholder="비밀번호")
             submitted = st.form_submit_button("인증번호 받기", type="primary", use_container_width=True)
@@ -602,11 +606,21 @@ def app_shell_css():
         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800;900&display=swap">
         <style>
           /* ================================================== */
-          /* 1. 디자인 완벽 복구: 강제 텍스트 색상 주입 삭제! */
-          /* (스트림릿 고유의 다크/라이트 모드 자동 변환 기능을 100% 살려줍니다.) */
+          /* 1. 디자인 완벽 복구: 강제 배경색/텍스트색 주입 완전히 삭제! */
+          /* 선생님의 아름다운 남색 배경 테마(styles.css)를 전혀 건드리지 않습니다. */
           /* ================================================== */
 
-          /* 2. 파란색 배너 안쪽 글씨들만 콕 집어서 '흰색/금색'으로 완벽 방어 */
+          /* 2. 하얀색 둥근 카드(.block-container) 내부 텍스트만 다크모드에서 잘 보이도록 어둡게 타겟팅 */
+          .block-container p, .block-container div, .block-container span,
+          .block-container label, .block-container li,
+          .q-stem, .q-stem-wrap, .q-stem-box li, 
+          .exam-question-anchor p, .exam-question-anchor div,
+          .auth-title, .auth-lead, .auth-security p, .auth-security li,
+          .resume-title, .resume-desc, .damoa-brand, .damoa-title, .user-email {
+              color: #132238 !important;
+          }
+          
+          /* 3. 파란색 배너 안쪽 글씨들만 콕 집어서 '흰색/금색'으로 완벽 방어 */
           div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner),
           div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) {
               background: linear-gradient(145deg, #071c33 0%, #0b2a4a 52%, #123b63 100%) !important;
@@ -625,7 +639,7 @@ def app_shell_css():
           .topics-mode-hints p { background: rgba(255,255,255,0.1) !important; color: #fff !important; padding: 0.5rem !important; border-radius: 0.5rem !important; margin: 0 !important; font-size: 0.8rem !important; }
           .topics-mode-hints strong { color: #c9a227 !important; display: block !important; margin-bottom: 0.1rem !important; font-size: 0.78rem !important; }
 
-          /* 3. 밝은 배경의 배너(전체풀기, 주제별, 이어하기) 안의 텍스트는 짙은 색으로 고정 */
+          /* 4. 밝은 배경의 배너(전체풀기, 주제별, 이어하기) 안의 텍스트는 짙은 색으로 고정 */
           .card-banner-inner {
               background-color: #f4f7fb !important;
               border: 1px solid #d7e0ea !important;
@@ -649,11 +663,11 @@ def app_shell_css():
           .resume-inline .resume-title { font-weight: 700 !important; font-size: 0.95rem !important; }
           .resume-inline .resume-desc { font-size: 0.85rem !important; color: #5b6b7c !important; margin-top: 0.3rem !important; }
 
-          /* 4. 시계(타이머) 초강력 시인성 적용! (노란바탕 + 빨간글씨) */
-          #realtime-timer {
-              background-color: #ffffff !important;
-              color: #e63946 !important;
-              border: 2px solid #e63946 !important;
+          /* 5. 시계(타이머) 초강력 시인성 적용! (연노란 바탕 + 진한 빨간 글자 + 테두리) */
+          div#realtime-timer, div.timer-pill {
+              background-color: #fff3cd !important;
+              color: #d90429 !important;
+              border: 2px solid #d90429 !important;
               padding: 0.4rem 1rem !important;
               border-radius: 8px !important;
               font-size: 1.1rem !important;
@@ -663,7 +677,7 @@ def app_shell_css():
               white-space: nowrap !important;
           }
           
-          /* 5. 마커 숨김 (텍스트 증발 방지용) */
+          /* 마커 숨김 (텍스트 증발 방지용) */
           .element-container:has(.mode-btns-mark),
           .element-container:has(.mock-btn-mark),
           .element-container:has(.topics-chips-mark),
@@ -691,6 +705,7 @@ def app_shell_css():
           .block-container {
             max-width: 960px !important;
             width: min(960px, calc(100vw - 1.5rem)) !important;
+            background: rgba(255,255,255,0.97) !important;
             border-radius: 1.5rem !important;
             padding: 2rem 2rem 2.4rem !important;
             margin-top: 1.2rem !important;
@@ -709,6 +724,7 @@ def app_shell_css():
             }
           }
           
+          /* 공통 버튼 디자인 */
           .stButton > button[kind='secondary'],
           .stButton > button[data-testid='baseButton-secondary'] {
             background: #fff !important;
@@ -724,7 +740,7 @@ def app_shell_css():
         """
     )
     
-    # --------- 오디오 및 [강력한 JS 기반 버튼 색상/정렬 시스템] ---------
+    # --------- 오디오 및 [버튼 색상/정렬 시스템] ---------
     components.html(
         """
         <script>
@@ -784,11 +800,11 @@ def app_shell_css():
                 }, true);
             }
 
-            // 하단 3버튼 1줄 고정 및 대시보드 버튼 통일! (하얀바탕+빨간글씨)
+            // 하단 3버튼 고정 및 대시보드 버튼 두 개를 완전히 똑같이 세팅! (흰 바탕 + 남색 선)
             setInterval(function() {
                 
-                // 1. 하단 3버튼 가로 1줄 고정 적용
-                var marks = doc.querySelectorAll('.exam-nav-side-mark, .result-actions-mark, .topics-chips-mark');
+                // 1. 하단 3버튼 1줄 고정 적용
+                var marks = doc.querySelectorAll('.exam-nav-side-mark, .result-actions-mark');
                 marks.forEach(function(mark) {
                     var block = mark.closest('[data-testid="stHorizontalBlock"]');
                     if (block) {
@@ -813,15 +829,15 @@ def app_shell_css():
                     }
                 });
 
-                // 2. 모의고사 버튼 두 개를 똑같이 예쁘게 통일! (하얀바탕 + 빨간글씨)
-                doc.querySelectorAll('.mode-btns-mark, .mock-btn-mark').forEach(function(mark) {
-                    var el = mark.closest('[data-testid="stElementContainer"]');
-                    if (el && el.nextElementSibling) {
-                        var btn = el.nextElementSibling.querySelector('button');
+                // 2. 모의고사 버튼 완전히 똑같이 통일 (흰색 바탕 + 남색 테두리/남색 글자)
+                doc.querySelectorAll('.topics-panel-inner, .mock-panel-inner').forEach(function(panel) {
+                    var col = panel.closest('[data-testid="column"]');
+                    if (col) {
+                        var btn = col.querySelector('button');
                         if (btn) {
                             btn.style.setProperty('background-color', '#ffffff', 'important');
-                            btn.style.setProperty('color', '#e63946', 'important');
-                            btn.style.setProperty('border', '2px solid #e63946', 'important');
+                            btn.style.setProperty('color', '#0b2a4a', 'important');
+                            btn.style.setProperty('border', '2px solid #0b2a4a', 'important');
                             btn.style.setProperty('font-size', '1.05rem', 'important');
                             btn.style.setProperty('font-weight', '800', 'important');
                             btn.style.setProperty('height', '3.2rem', 'important');
@@ -933,7 +949,6 @@ def view_dashboard():
             """,
             unsafe_allow_html=True,
         )
-        st.markdown('<div class="mode-btns-mark"></div>', unsafe_allow_html=True)
         if st.button("주제별 모의고사 시작", type="primary", use_container_width=True, key="dash_exam"):
             go("topics", topics_mode="end")
 
@@ -949,7 +964,6 @@ def view_dashboard():
             """,
             unsafe_allow_html=True,
         )
-        st.markdown('<div class="mock-btn-mark"></div>', unsafe_allow_html=True)
         if st.button("실전 모의고사 풀기", type="primary", use_container_width=True, key="dash_mock"):
             aid, err = start_exam(user["id"], kind="mock", reveal_mode="end", force_new=True)
             if err:
@@ -1019,9 +1033,10 @@ def view_topics():
         unsafe_allow_html=True,
     )
 
-    st.markdown('<div class="topics-chips-mark"></div>', unsafe_allow_html=True)
-    if st.button("홈으로", type="secondary", use_container_width=True, key="topics_home"):
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("← 홈으로 돌아가기", key="topics_home", type="secondary"):
         go("dashboard")
+    st.markdown("<br>", unsafe_allow_html=True)
 
     active = get_active_attempt(user["id"])
     if active:
@@ -1160,7 +1175,7 @@ def view_exam():
             <p style="margin:0.4rem 0 0; font-weight:700;">진행 {answered}/{attempt["totalCount"]}</p>
             {cat_line}
           </div>
-          <div id="realtime-timer">남은 시간 {mm:02d}:{ss:02d}</div>
+          <div id="realtime-timer">⏳ 남은 시간 {mm:02d}:{ss:02d}</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -1298,8 +1313,6 @@ def view_exam():
                     
                     let m = String(Math.floor(remain / 60)).padStart(2, '0');
                     let s = String(remain % 60).padStart(2, '0');
-                    
-                    // 타이머 텍스트에 모래시계 아이콘 추가하여 강조!
                     el.innerHTML = "⏳ 남은 시간 " + m + ":" + s;
                     
                     if (remain <= 0) {{
@@ -1353,7 +1366,7 @@ def view_result():
         )
         c1, c2, c3 = st.columns(3, gap="small")
         with c1:
-            st.markdown('<div class="result-actions-mark"></div>', unsafe_allow_html=True)
+            st.markdown('<div class="result-actions-mark" style="display:none;"></div>', unsafe_allow_html=True)
             if st.button("홈으로", use_container_width=True, type="secondary", key=f"{key_prefix}_home"):
                 go("dashboard")
         with c2:
