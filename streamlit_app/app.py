@@ -606,11 +606,12 @@ def app_shell_css():
         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800;900&display=swap">
         <style>
           /* ================================================== */
-          /* 1. 디자인 완벽 복구: 강제 배경색/텍스트색 주입 완전히 삭제! */
-          /* 선생님의 아름다운 남색 배경 테마(styles.css)를 전혀 건드리지 않습니다. */
+          /* 1. 디자인 완벽 복구: 강제 배경색/텍스트색 삭제! */
+          /* 앱 전체를 하얗게 덮던 코드를 진짜로 삭제했습니다. 
+             이제 선생님의 기존 아름다운 남색/다크 배경 화면이 완벽하게 돌아옵니다. */
           /* ================================================== */
 
-          /* 2. 하얀색 둥근 카드(.block-container) 내부 텍스트만 다크모드에서 잘 보이도록 어둡게 타겟팅 */
+          /* 2. 하얀색 중앙 카드(.block-container) 내부 텍스트만 다크모드에서 잘 보이도록 어둡게 강제! */
           .block-container p, .block-container div, .block-container span,
           .block-container label, .block-container li,
           .q-stem, .q-stem-wrap, .q-stem-box li, 
@@ -663,8 +664,8 @@ def app_shell_css():
           .resume-inline .resume-title { font-weight: 700 !important; font-size: 0.95rem !important; }
           .resume-inline .resume-desc { font-size: 0.85rem !important; color: #5b6b7c !important; margin-top: 0.3rem !important; }
 
-          /* 5. 시계(타이머) 초강력 시인성 적용! (연노란 바탕 + 진한 빨간 글자 + 테두리) */
-          div#realtime-timer, div.timer-pill {
+          /* 5. 시계(타이머) 초강력 시인성 적용! (노란바탕 + 빨간글씨) */
+          #realtime-timer {
               background-color: #fff3cd !important;
               color: #d90429 !important;
               border: 2px solid #d90429 !important;
@@ -800,7 +801,7 @@ def app_shell_css():
                 }, true);
             }
 
-            // 하단 3버튼 고정 및 대시보드 버튼 두 개를 완전히 똑같이 세팅! (흰 바탕 + 남색 선)
+            // 하단 3버튼 1줄 고정 및 대시보드 두 버튼 통일(흰 바탕+남색 테두리)
             setInterval(function() {
                 
                 // 1. 하단 3버튼 1줄 고정 적용
@@ -829,7 +830,8 @@ def app_shell_css():
                     }
                 });
 
-                // 2. 모의고사 버튼 완전히 똑같이 통일 (흰색 바탕 + 남색 테두리/남색 글자)
+                // 2. 모의고사 버튼 두 개를 똑같이 예쁘게 통일! (흰색 바탕 + 남색 테두리/남색 글자)
+                // - 선생님의 요청대로 빨간색 버튼 디자인을 전면 폐기했습니다!
                 doc.querySelectorAll('.topics-panel-inner, .mock-panel-inner').forEach(function(panel) {
                     var col = panel.closest('[data-testid="column"]');
                     if (col) {
@@ -1255,7 +1257,7 @@ def view_exam():
     nav_l, nav_m, nav_r = st.columns(3, gap="small")
     
     with nav_l:
-        st.markdown('<div class="exam-nav-side-mark"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="exam-nav-side-mark" style="display:none;"></div>', unsafe_allow_html=True)
         if st.button("이전", disabled=idx <= 0, use_container_width=True, type="secondary", key="exam_prev"):
             st.session_state.q_index = idx - 1
             st.session_state.feedback = None
