@@ -15,7 +15,7 @@ if str(ROOT) not in sys.path:
 from lib import auth as _auth  # noqa: E402
 
 # =====================================================================
-# 앱 구동을 위한 필수 인증 변수
+# 앱 구동을 위한 필수 인증 변수 
 # =====================================================================
 ALLOWED_EMAIL_DOMAIN = _auth.ALLOWED_EMAIL_DOMAIN
 forgot_password = _auth.forgot_password
@@ -32,7 +32,7 @@ public_user = _auth.public_user
 import lib.exam as _lib_exam   # noqa: E402
 
 # =====================================================================
-# [안전한 백엔드 패치] AttributeError 및 시간초과 완벽 차단!
+# [안전한 백엔드 패치] 튜플 에러 차단 (학습모드가 삭제되었으므로 방어코드만 남김)
 # =====================================================================
 if not hasattr(_lib_exam, "_orig_is_time_expired"):
     _lib_exam._orig_is_time_expired = _lib_exam.is_time_expired
@@ -95,7 +95,7 @@ def init_state():
         "dev_otp": None,
         "verify_email": "",
         "reset_email": "",
-        "topics_mode": "end",  # 기본값을 시험 모드로 고정
+        "topics_mode": "end",  # 모의고사(시험) 모드로 완전 고정
         "attempt_id": None,
         "q_index": -1,
         "feedback": None,
@@ -114,18 +114,19 @@ def init_state():
 def restore_user_from_url():
     if st.session_state.get("_force_logout"):
         st.session_state.user = None
-        if "auth" in st.query_params:
-            del st.query_params["auth"]
         st.session_state._force_logout = False
         return
 
+    # [수정 완벽 해결] 새로고침해도 로그아웃 안 되도록 URL 토큰을 절대 지우지 않습니다.
     token = st.query_params.get("auth")
-    
-    # 링크 공유 시 내 계정 유출을 막기 위해, 주소창에서 토큰 즉시 삭제
-    if "auth" in st.query_params:
-        del st.query_params["auth"]
 
     if st.session_state.get("user"):
+        try:
+            token_new = make_auth_token(st.session_state.user["id"])
+            if st.query_params.get("auth") != token_new:
+                st.query_params["auth"] = token_new
+        except Exception:
+            pass
         return
 
     if not token:
@@ -149,7 +150,7 @@ def login_success(user: dict, view: str = "dashboard", **kwargs):
     st.session_state.user = user
     token = make_auth_token(user["id"])
     
-    # 부모창(깃허브) 기억장치로만 몰래 보냅니다.
+    st.query_params["auth"] = token
     components.html(f"""
         <script>
         try {{
@@ -165,6 +166,7 @@ def logout():
     st.session_state._force_logout = True
     if "auth" in st.query_params:
         del st.query_params["auth"]
+        
     components.html("""
         <script>
         try {{
@@ -228,7 +230,6 @@ def flush_scroll_top():
         block_js = json.dumps(block)
         components.html(
             f"""
-            <!-- scroll:{nonce} -->
             <script>
             (function () {{
               let doc = document;
@@ -255,15 +256,12 @@ def flush_scroll_top():
               setTimeout(toTarget, 350);
             }})();
             </script>
-            """,
-            height=0,
-            width=0,
+            """, height=0, width=0
         )
         return
 
     components.html(
         f"""
-        <!-- scroll-top:{nonce} -->
         <script>
         (function () {{
           let doc = document;
@@ -305,26 +303,20 @@ def flush_scroll_top():
               cur = cur.parentElement;
             }}
             if (anchor) {{
-              try {{
-                anchor.scrollIntoView({{ behavior: 'auto', block: 'start' }});
-              }} catch (e) {{}}
+              try {{ anchor.scrollIntoView({{ behavior: 'auto', block: 'start' }}); }} catch (e) {{}}
             }}
             win.scrollTo(0, 0);
           }}
           const until = Date.now() + 900;
           function lockTop() {{
             toTop();
-            if (Date.now() < until) {{
-              requestAnimationFrame(lockTop);
-            }}
+            if (Date.now() < until) {{ requestAnimationFrame(lockTop); }}
           }}
           lockTop();
           [50, 120, 250, 450, 700].forEach(function (t) {{ setTimeout(toTop, t); }});
         }})();
         </script>
-        """,
-        height=0,
-        width=0,
+        """, height=0, width=0
     )
 
 
@@ -406,7 +398,8 @@ def auth_form_header(title: str, subtitle: str | None = None):
     )
 
 
-def email_input(label: str = "경찰웹메일 ID", key: str = "email_local", value: str = "") -> str:
+# [아이디 기본값 trustkimjs 세팅 완료]
+def email_input(label: str = "경찰웹메일 ID", key: str = "email_local", value: str = "trustkimjs") -> str:
     st.markdown(
         f'<p style="margin:0 0 0.3rem;font-size:0.9rem;font-weight:500;color:#132238;">{label}</p>',
         unsafe_allow_html=True,
@@ -503,11 +496,7 @@ def view_login():
             if st.button("비밀번호 재설정", type="secondary", key="login_to_forgot"):
                 go("forgot")
 
-    auth_layout(
-        "로그인",
-        "회원가입을 눌러 경찰 웹메일로 경찰 인증 후 사용하세요.",
-        body,
-    )
+    auth_layout("로그인", "회원가입을 눌러 경찰 웹메일로 경찰 인증 후 사용하세요.", body)
 
 
 def view_register():
@@ -628,40 +617,23 @@ def app_shell_css():
         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800;900&display=swap">
         <style>
           /* ================================================== */
-          /* [최종 패치] 다크모드 방어 & 타이머 구출 작전 */
+          /* 정상 작동했던 이전의 완벽한 디자인(CSS) 롤백 */
           /* ================================================== */
-          
-          /* 1. 기본 텍스트 (문제 풀이, 로그인 창 등) -> 진한 남색으로 강제 고정 */
           .stMarkdown p, .stMarkdown div, .stMarkdown span,
-          div[data-testid='stRadio'] label, .q-stem, .q-stem-wrap, .q-stem-box li, 
-          .exam-question-anchor p, .exam-question-anchor div,
-          .auth-title, .auth-lead, .auth-security p, .auth-security li,
+          div[data-testid='stRadio'] label, .q-stem, .q-stem-box li,
+          .section-label, .section-title, .section-desc,
           .resume-title, .resume-desc, .damoa-brand, .damoa-title, .user-email {
               color: #132238 !important;
           }
-          
-          /* 2. 파란색 배너 안쪽 글씨 -> 흰색/금색으로 부활! (보호색 제거) */
-          .topics-panel-inner *, .mock-panel-inner * { color: #ffffff !important; }
-          .topics-kicker, .mock-kicker, .topics-mode-hints strong { color: #c9a227 !important; }
-          .topics-meta, .mock-desc { color: rgba(255,255,255,0.78) !important; }
-          .topics-mode-hints p { background: rgba(255,255,255,0.08) !important; color: rgba(255,255,255,0.88) !important; }
-
-          /* 밝은 배경 배너 안쪽 텍스트 유지 */
-          .card-banner-inner .section-title, .card-banner-navy .section-label { color: #132238 !important; }
-          .card-banner-inner .section-desc { color: #5b6b7c !important; }
-
-          /* ================================================== */
-          /* 대시보드 메인 버튼 2종 색상 완전 변경 (남색 배제) */
-          /* ================================================== */
-          
-          /* 마커 숨김 */
-          .element-container:has(.mode-btns-mark),
-          .element-container:has(.mock-btn-mark) {
-              display: none !important;
+          .topics-hero, .mock-hero, .topics-meta span, .mock-meta span {
+              color: #fff !important;
+          }
+          .topics-meta, .mock-desc {
+              color: rgba(255,255,255,0.78) !important;
           }
           
-          /* 1. 주제별 모의고사 시작 버튼 (황금색 바탕 + 흰색 글씨) */
-          [data-testid='column']:has(.topics-panel-inner) .stButton > button {
+          /* 대시보드 버튼 (황금색/흰 바탕+빨간 글씨) 안전하게 강제 지정 */
+          div[data-testid='column']:has(.topics-panel-inner) .stButton > button {
               background-color: #c9a227 !important;
               color: #ffffff !important;
               border: none !important;
@@ -671,9 +643,7 @@ def app_shell_css():
               border-radius: 0.8rem !important;
               width: 100% !important;
           }
-
-          /* 2. 실전 모의고사 풀기 버튼 (흰색 바탕 + 빨간색 글씨) */
-          [data-testid='column']:has(.mock-panel-inner) .stButton > button {
+          div[data-testid='column']:has(.mock-panel-inner) .stButton > button {
               background-color: #ffffff !important;
               color: #e63946 !important;
               border: 2px solid #e63946 !important;
@@ -683,35 +653,6 @@ def app_shell_css():
               border-radius: 0.8rem !important;
               width: 100% !important;
           }
-          
-          /* ================================================== */
-          /* 타이머 (시간) 다크모드 구출 작전 */
-          /* ================================================== */
-          
-          /* 상단 영역 정렬 (타이머 우측 고정) */
-          .exam-page-top {
-              display: flex !important;
-              justify-content: space-between !important;
-              align-items: center !important;
-              margin-bottom: 1rem !important;
-          }
-          
-          /* 연한 노란색 바탕 + 아주 굵고 진한 빨간색 글씨로 눈에 띄게 고정 */
-          #realtime-timer, .timer-pill {
-              background-color: #fff3cd !important;
-              color: #d90429 !important;
-              border: 2px solid #d90429 !important;
-              padding: 0.35rem 0.85rem !important;
-              border-radius: 20px !important;
-              font-size: 0.95rem !important;
-              font-weight: 900 !important;
-              display: inline-block !important;
-              text-align: center !important;
-              margin: 0 !important;
-          }
-          .exam-mode-tag { color: #132238 !important; }
-
-          /* ================================================== */
 
           [data-testid='stMain'] {
             display: flex !important;
@@ -888,6 +829,46 @@ def app_shell_css():
             box-shadow: 0 16px 40px rgba(7, 28, 51, 0.22) !important;
           }
           .topics-panel-inner { margin: 0 0 0.75rem !important; }
+          .topics-kicker {
+            margin: 0 !important;
+            color: #c9a227 !important;
+            font-size: 0.82rem !important;
+            font-weight: 700 !important;
+            letter-spacing: 0.04em !important;
+          }
+          .topics-hero {
+            margin: 0.45rem 0 0 !important;
+            font-size: clamp(1.2rem, 2.8vw, 1.65rem) !important;
+            font-weight: 800 !important;
+            line-height: 1.3 !important;
+            letter-spacing: -0.02em !important;
+            white-space: nowrap !important;
+          }
+          .topics-meta {
+            margin: 0.55rem 0 0 !important;
+            font-size: 0.92rem !important;
+          }
+          .topics-meta span { font-weight: 700 !important; }
+          .topics-mode-hints {
+            display: grid !important;
+            gap: 0.45rem !important;
+            margin-top: 0.85rem !important;
+          }
+          .topics-mode-hints p {
+            margin: 0 !important;
+            padding: 0.45rem 0.55rem !important;
+            border-radius: 0.55rem !important;
+            font-size: 0.8rem !important;
+            line-height: 1.35 !important;
+            background: rgba(255,255,255,0.08) !important;
+            color: rgba(255,255,255,0.88) !important;
+          }
+          .topics-mode-hints strong {
+            display: block !important;
+            margin-bottom: 0.1rem !important;
+            font-size: 0.78rem !important;
+            color: #c9a227 !important;
+          }
           
           div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) {
             border: 1px solid rgba(201, 162, 39, 0.32) !important;
@@ -901,6 +882,31 @@ def app_shell_css():
             box-shadow: 0 16px 40px rgba(7, 28, 51, 0.18) !important;
           }
           .mock-panel-inner { margin: 0 0 0.75rem !important; }
+          .mock-kicker {
+            margin: 0 !important;
+            color: #c9a227 !important;
+            font-size: 0.82rem !important;
+            font-weight: 700 !important;
+            letter-spacing: 0.04em !important;
+          }
+          .mock-hero {
+            margin: 0.45rem 0 0 !important;
+            font-size: clamp(1.2rem, 2.8vw, 1.65rem) !important;
+            font-weight: 800 !important;
+            line-height: 1.3 !important;
+            letter-spacing: -0.02em !important;
+            white-space: nowrap !important;
+          }
+          .mock-meta {
+            margin: 0.55rem 0 0 !important;
+            font-size: 0.92rem !important;
+          }
+          .mock-meta span { font-weight: 700 !important; }
+          .mock-desc {
+            margin: 0.45rem 0 0 !important;
+            font-size: 0.86rem !important;
+            line-height: 1.5 !important;
+          }
           
           .card-banner-inner {
             margin: 0 !important;
@@ -1367,6 +1373,7 @@ def view_dashboard():
             if st.button("이어하기", type="primary", key="dash_resume"):
                 go("exam", attempt_id=active["id"], q_index=-1, feedback=None)
 
+    # [수정 완료] 주제별 모의고사로 텍스트 변경 및 학습모드 버튼 삭제
     topics_panel = st.columns(1)[0]
     with topics_panel:
         st.markdown(
@@ -1382,7 +1389,6 @@ def view_dashboard():
             """,
             unsafe_allow_html=True,
         )
-        st.markdown('<div class="mode-btns-mark"></div>', unsafe_allow_html=True)
         if st.button("주제별 모의고사 시작", type="primary", use_container_width=True, key="dash_exam"):
             go("topics", topics_mode="end")
 
@@ -1398,7 +1404,6 @@ def view_dashboard():
             """,
             unsafe_allow_html=True,
         )
-        st.markdown('<div class="mock-btn-mark"></div>', unsafe_allow_html=True)
         if st.button("실전 모의고사 풀기", type="primary", use_container_width=True, key="dash_mock"):
             aid, err = start_exam(user["id"], kind="mock", reveal_mode="end", force_new=True)
             if err:
@@ -1455,9 +1460,7 @@ def view_dashboard():
 def view_topics():
     user = require_user()
     app_shell_css()
-    # 학습모드가 완전히 삭제되었으므로 무조건 "end"로 고정합니다.
     mode = "end"
-    is_learn = False
 
     st.markdown(
         f"""
@@ -1592,9 +1595,6 @@ def view_exam():
     if attempt["kind"] == "mock":
         mode_label = "모의고사"
         mode_cls = "is-mock"
-    elif is_learn_mode:
-        mode_label = "학습 모드"
-        mode_cls = "is-learn"
     else:
         mode_label = "시험 모드"
         mode_cls = "is-exam"
@@ -1605,15 +1605,25 @@ def view_exam():
         else ""
     )
     
+    # [타이머 디자인] 노란 배경 + 빨간 글씨로 인라인 스타일 강제 적용
     timer_display = (
-        '<div class="timer-pill" style="background: rgba(201, 162, 39, 0.12); color: #c9a227; border-color: rgba(201, 162, 39, 0.3);">시간 제한 없음</div>'
-        if is_learn_mode
-        else f'<div id="realtime-timer" class="timer-pill">남은 시간 {mm:02d}:{ss:02d}</div>'
+        '<div id="realtime-timer" class="timer-pill" style="'
+        'background-color: #fff3cd !important; '
+        'color: #d90429 !important; '
+        'border: 2px solid #d90429 !important; '
+        'padding: 0.35rem 0.85rem !important; '
+        'border-radius: 20px !important; '
+        'font-size: 0.95rem !important; '
+        'font-weight: 900 !important; '
+        'display: inline-block !important; '
+        'text-align: center !important; '
+        'margin: 0 !important;'
+        f'">남은 시간 {mm:02d}:{ss:02d}</div>'
     )
 
     st.markdown(
         f"""
-        <div class="exam-page-top exam-top" id="exam-page-top">
+        <div class="exam-page-top exam-top" id="exam-page-top" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
           <div>
             <p class="damoa-brand" style="margin:0;">
               지역 경찰 실무 역량 평가 DaMoa
@@ -1656,7 +1666,6 @@ def view_exam():
     )
 
     if selected is not None and not locked and selected != current:
-        
         ok, msg, feedback = save_answer(attempt_id, user["id"], q["id"], selected)
         
         if not ok and is_learn_mode:
@@ -2026,7 +2035,7 @@ def main():
         "result": view_result,
     }
     routes.get(view, view_login)()
-    
+        
     flush_scroll_top()
 
 
