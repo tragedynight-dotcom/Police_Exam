@@ -932,7 +932,7 @@ def app_shell_css():
           }
           .topics-meta span { color: #fff !important; font-weight: 700 !important; }
           
-          /* 학습모드 삭제 후 1개 버튼만 남기므로 1fr로 변경 */
+          /* 학습모드 삭제 후 1개 버튼만 남기므로 1fr로 유지 */
           .topics-mode-hints {
             display: grid !important;
             grid-template-columns: 1fr !important;
@@ -955,33 +955,44 @@ def app_shell_css():
             font-size: 0.78rem !important;
           }
           
-          /* 버튼이 1개일 때를 대비한 100% 꽉차게 고정 설정 */
-          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) {
-            display: flex !important;
-            flex-direction: row !important;
-            flex-wrap: nowrap !important;
-            gap: 0.5rem !important;
-            margin: 0 !important;
-          }
-          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) > div {
-            flex: 1 1 100% !important;
-            width: 100% !important;
-            min-width: 0 !important;
-            max-width: 100% !important;
-          }
-          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .element-container:has(.mode-btns-mark),
-          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) [data-testid='stElementContainer']:has(.mode-btns-mark) {
-            display: none !important;
-            height: 0 !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            overflow: hidden !important;
-          }
-          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton {
+          /* ========================================================== */
+          /* [완벽 수정 반영] 두 메인 버튼(주제별, 실전) 완벽 동일 디자인! */
+          /* ========================================================== */
+          
+          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) .stButton,
+          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton {
             width: 100% !important;
             margin: 0 !important;
           }
           
+          /* 주제별 모의고사 버튼과 실전 모의고사 버튼을 똑같이 하얀 바탕/남색 글씨/테두리로 고정! */
+          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) .stButton > button[kind='primary'],
+          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) .stButton > button[data-testid='baseButton-primary'],
+          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[kind='primary'],
+          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[data-testid='baseButton-primary'] {
+            padding: 0.65rem 0.7rem !important;
+            border-radius: 0.7rem !important;
+            height: 2.75rem !important;
+            min-height: 2.75rem !important;
+            width: 100% !important;
+            background-color: #ffffff !important;
+            color: #0b2a4a !important;
+            border: 1px solid rgba(255,255,255,0.85) !important;
+          }
+          
+          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) .stButton > button[kind='primary'] *,
+          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) .stButton > button[data-testid='baseButton-primary'] *,
+          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[kind='primary'] *,
+          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[data-testid='baseButton-primary'] * {
+            font-size: 0.95rem !important;
+            font-weight: 800 !important;
+            font-family: "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif !important;
+            letter-spacing: -0.01em !important;
+            color: #0b2a4a !important;
+          }
+          
+          /* ========================================================== */
+
           div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) {
             border: 1px solid rgba(201, 162, 39, 0.32) !important;
             background:
@@ -1022,42 +1033,11 @@ def app_shell_css():
             font-size: 0.86rem !important;
             line-height: 1.5 !important;
           }
-          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .element-container:has(.mock-btn-mark),
-          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) [data-testid='stElementContainer']:has(.mock-btn-mark) {
+          
+          /* 마커 숨기기 */
+          .element-container:has(.mode-btns-mark),
+          .element-container:has(.mock-btn-mark) {
             display: none !important;
-            height: 0 !important;
-            margin: 0 !important;
-            padding: 0 !important;
-          }
-          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton {
-            width: 100% !important;
-            margin: 0 !important;
-          }
-          
-          /* [요청 반영] 주제별 모의고사 버튼과 실전 모의고사 버튼을 똑같이 하얀 바탕/남색 글씨/테두리로 고정! */
-          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[kind='primary'],
-          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[data-testid='baseButton-primary'],
-          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[kind='primary'],
-          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[data-testid='baseButton-primary'] {
-            padding: 0.65rem 0.7rem !important;
-            border-radius: 0.7rem !important;
-            height: 2.75rem !important;
-            min-height: 2.75rem !important;
-            width: 100% !important;
-            background: #ffffff !important;
-            color: #0b2a4a !important;
-            border: 1px solid rgba(255,255,255,0.85) !important;
-          }
-          
-          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[kind='primary'] *,
-          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[data-testid='baseButton-primary'] *,
-          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[kind='primary'] *,
-          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[data-testid='baseButton-primary'] * {
-            font-size: 0.95rem !important;
-            font-weight: 800 !important;
-            font-family: "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif !important;
-            letter-spacing: -0.01em !important;
-            color: #0b2a4a !important;
           }
           
           .card-banner-inner {
@@ -1767,12 +1747,12 @@ def view_exam():
     )
     
     timer_display = (
-        '<div id="realtime-timer" class="timer-pill" style="background-color: #fff3cd !important; color: #d90429 !important; border: 2px solid #d90429 !important; padding: 0.35rem 0.85rem !important; border-radius: 20px !important; font-size: 0.95rem !important; font-weight: 900 !important; display: inline-block !important; text-align: center !important; margin: 0 !important;">남은 시간 {mm:02d}:{ss:02d}</div>'
+        '<div id="realtime-timer" class="timer-pill">남은 시간 {mm:02d}:{ss:02d}</div>'
     )
 
     st.markdown(
         f"""
-        <div class="exam-page-top exam-top" id="exam-page-top" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+        <div class="exam-page-top exam-top" id="exam-page-top">
           <div>
             <p class="damoa-brand" style="margin:0;">
               지역 경찰 실무 역량 평가 DaMoa
