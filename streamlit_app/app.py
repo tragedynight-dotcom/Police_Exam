@@ -14,7 +14,9 @@ if str(ROOT) not in sys.path:
 
 from lib import auth as _auth  # noqa: E402
 
-# 필수 인증 변수 세팅
+# =====================================================================
+# 앱 구동을 위한 필수 인증 변수
+# =====================================================================
 ALLOWED_EMAIL_DOMAIN = _auth.ALLOWED_EMAIL_DOMAIN
 forgot_password = _auth.forgot_password
 full_police_email = _auth.full_police_email
@@ -29,7 +31,9 @@ public_user = _auth.public_user
 
 import lib.exam as _lib_exam   # noqa: E402
 
-# [안전한 백엔드 패치] 튜플 에러 및 학습모드 시간초과 방지
+# =====================================================================
+# [안전한 백엔드 패치] AttributeError 및 시간초과 완벽 차단!
+# =====================================================================
 if not hasattr(_lib_exam, "_orig_is_time_expired"):
     _lib_exam._orig_is_time_expired = _lib_exam.is_time_expired
     _lib_exam._orig_attempt_ends_at = _lib_exam.attempt_ends_at
@@ -53,6 +57,7 @@ if not hasattr(_lib_exam, "_orig_is_time_expired"):
 
     _lib_exam.is_time_expired = _safe_is_time_expired
     _lib_exam.attempt_ends_at = _safe_attempt_ends_at
+# =====================================================================
 
 from lib.exam import (  # noqa: E402
     attempt_ends_at,
@@ -109,19 +114,18 @@ def init_state():
 def restore_user_from_url():
     if st.session_state.get("_force_logout"):
         st.session_state.user = None
+        if "auth" in st.query_params:
+            del st.query_params["auth"]
         st.session_state._force_logout = False
         return
 
-    # 새로고침 시 로그아웃 방지
     token = st.query_params.get("auth")
+    
+    # 링크 공유 시 내 계정 유출을 막기 위해, 주소창에서 토큰 즉시 삭제
+    if "auth" in st.query_params:
+        del st.query_params["auth"]
 
     if st.session_state.get("user"):
-        try:
-            token_new = make_auth_token(st.session_state.user["id"])
-            if st.query_params.get("auth") != token_new:
-                st.query_params["auth"] = token_new
-        except Exception:
-            pass
         return
 
     if not token:
@@ -144,8 +148,8 @@ def login_success(user: dict, view: str = "dashboard", **kwargs):
     st.session_state._force_logout = False
     st.session_state.user = user
     token = make_auth_token(user["id"])
-    st.query_params["auth"] = token
     
+    # 부모창(깃허브) 기억장치로만 몰래 보냅니다.
     components.html(f"""
         <script>
         try {{
@@ -161,7 +165,6 @@ def logout():
     st.session_state._force_logout = True
     if "auth" in st.query_params:
         del st.query_params["auth"]
-        
     components.html("""
         <script>
         try {{
@@ -225,6 +228,7 @@ def flush_scroll_top():
         block_js = json.dumps(block)
         components.html(
             f"""
+            <!-- scroll:{nonce} -->
             <script>
             (function () {{
               let doc = document;
@@ -251,12 +255,15 @@ def flush_scroll_top():
               setTimeout(toTarget, 350);
             }})();
             </script>
-            """, height=0, width=0
+            """,
+            height=0,
+            width=0,
         )
         return
 
     components.html(
         f"""
+        <!-- scroll-top:{nonce} -->
         <script>
         (function () {{
           let doc = document;
@@ -298,20 +305,26 @@ def flush_scroll_top():
               cur = cur.parentElement;
             }}
             if (anchor) {{
-              try {{ anchor.scrollIntoView({{ behavior: 'auto', block: 'start' }}); }} catch (e) {{}}
+              try {{
+                anchor.scrollIntoView({{ behavior: 'auto', block: 'start' }});
+              }} catch (e) {{}}
             }}
             win.scrollTo(0, 0);
           }}
           const until = Date.now() + 900;
           function lockTop() {{
             toTop();
-            if (Date.now() < until) {{ requestAnimationFrame(lockTop); }}
+            if (Date.now() < until) {{
+              requestAnimationFrame(lockTop);
+            }}
           }}
           lockTop();
           [50, 120, 250, 450, 700].forEach(function (t) {{ setTimeout(toTop, t); }});
         }})();
         </script>
-        """, height=0, width=0
+        """,
+        height=0,
+        width=0,
     )
 
 
@@ -391,6 +404,7 @@ def auth_form_header(title: str, subtitle: str | None = None):
         """,
         unsafe_allow_html=True,
     )
+
 
 def email_input(label: str = "경찰웹메일 ID", key: str = "email_local", value: str = "") -> str:
     st.markdown(
@@ -489,7 +503,11 @@ def view_login():
             if st.button("비밀번호 재설정", type="secondary", key="login_to_forgot"):
                 go("forgot")
 
-    auth_layout("로그인", "회원가입을 눌러 경찰 웹메일로 경찰 인증 후 사용하세요.", body)
+    auth_layout(
+        "로그인",
+        "회원가입을 눌러 경찰 웹메일로 경찰 인증 후 사용하세요.",
+        body,
+    )
 
 
 def view_register():
@@ -610,11 +628,10 @@ def app_shell_css():
         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800;900&display=swap">
         <style>
           /* ================================================== */
-          /* [초정밀 패치] 다크모드 방어: 문제 글씨는 어둡게, 
-             파란 배너 안쪽 글씨는 완벽하게 흰색/금색으로 부활! */
+          /* [최종 패치] 다크모드 방어 & 타이머 구출 작전 */
           /* ================================================== */
           
-          /* 1. 배경을 강제 흰색으로 했으므로, 모든 기본 텍스트는 진남색으로 덮어버림 */
+          /* 1. 기본 텍스트 (문제 풀이, 로그인 창 등) -> 진한 남색으로 강제 고정 */
           .stMarkdown p, .stMarkdown div, .stMarkdown span,
           div[data-testid='stRadio'] label, .q-stem, .q-stem-wrap, .q-stem-box li, 
           .exam-question-anchor p, .exam-question-anchor div,
@@ -623,35 +640,77 @@ def app_shell_css():
               color: #132238 !important;
           }
           
-          /* 2. [가장 중요] 파란색 배너 안의 텍스트는 위 1번 규칙을 뚫고 나오도록 초정밀 타겟팅! */
-          .stMarkdown .topics-panel-inner p.topics-kicker,
-          .stMarkdown .mock-panel-inner p.mock-kicker {
-              color: #c9a227 !important;
+          /* 2. 파란색 배너 안쪽 글씨 -> 흰색/금색으로 부활! (보호색 제거) */
+          .topics-panel-inner *, .mock-panel-inner * { color: #ffffff !important; }
+          .topics-kicker, .mock-kicker, .topics-mode-hints strong { color: #c9a227 !important; }
+          .topics-meta, .mock-desc { color: rgba(255,255,255,0.78) !important; }
+          .topics-mode-hints p { background: rgba(255,255,255,0.08) !important; color: rgba(255,255,255,0.88) !important; }
+
+          /* 밝은 배경 배너 안쪽 텍스트 유지 */
+          .card-banner-inner .section-title, .card-banner-navy .section-label { color: #132238 !important; }
+          .card-banner-inner .section-desc { color: #5b6b7c !important; }
+
+          /* ================================================== */
+          /* 대시보드 메인 버튼 2종 색상 완전 변경 (남색 배제) */
+          /* ================================================== */
+          
+          /* 마커 숨김 */
+          .element-container:has(.mode-btns-mark),
+          .element-container:has(.mock-btn-mark) {
+              display: none !important;
           }
-          .stMarkdown .topics-panel-inner p.topics-hero,
-          .stMarkdown .mock-panel-inner p.mock-hero,
-          .stMarkdown .topics-panel-inner p.topics-meta span,
-          .stMarkdown .mock-panel-inner p.mock-meta span,
-          .stMarkdown .topics-panel-inner div.topics-mode-hints p strong {
+          
+          /* 1. 주제별 모의고사 시작 버튼 (황금색 바탕 + 흰색 글씨) */
+          [data-testid='column']:has(.topics-panel-inner) .stButton > button {
+              background-color: #c9a227 !important;
               color: #ffffff !important;
-          }
-          .stMarkdown .topics-panel-inner p.topics-meta,
-          .stMarkdown .mock-panel-inner p.mock-desc {
-              color: rgba(255,255,255,0.78) !important;
-          }
-          .stMarkdown .topics-panel-inner div.topics-mode-hints p {
-              color: rgba(255,255,255,0.88) !important;
-              background: rgba(255,255,255,0.08) !important;
+              border: none !important;
+              font-size: 1.05rem !important;
+              font-weight: 800 !important;
+              height: 3.2rem !important;
+              border-radius: 0.8rem !important;
+              width: 100% !important;
           }
 
-          /* 3. 밝은 배경의 배너(전체풀기, 주제별) 안의 글씨도 확실히 어둡게 고정 */
-          .stMarkdown .card-banner-inner p.section-title,
-          .stMarkdown .card-banner-navy p.section-label { 
-              color: #132238 !important; 
+          /* 2. 실전 모의고사 풀기 버튼 (흰색 바탕 + 빨간색 글씨) */
+          [data-testid='column']:has(.mock-panel-inner) .stButton > button {
+              background-color: #ffffff !important;
+              color: #e63946 !important;
+              border: 2px solid #e63946 !important;
+              font-size: 1.05rem !important;
+              font-weight: 800 !important;
+              height: 3.2rem !important;
+              border-radius: 0.8rem !important;
+              width: 100% !important;
           }
-          .stMarkdown .card-banner-inner p.section-desc { 
-              color: #5b6b7c !important; 
+          
+          /* ================================================== */
+          /* 타이머 (시간) 다크모드 구출 작전 */
+          /* ================================================== */
+          
+          /* 상단 영역 정렬 (타이머 우측 고정) */
+          .exam-page-top {
+              display: flex !important;
+              justify-content: space-between !important;
+              align-items: center !important;
+              margin-bottom: 1rem !important;
           }
+          
+          /* 연한 노란색 바탕 + 아주 굵고 진한 빨간색 글씨로 눈에 띄게 고정 */
+          #realtime-timer, .timer-pill {
+              background-color: #fff3cd !important;
+              color: #d90429 !important;
+              border: 2px solid #d90429 !important;
+              padding: 0.35rem 0.85rem !important;
+              border-radius: 20px !important;
+              font-size: 0.95rem !important;
+              font-weight: 900 !important;
+              display: inline-block !important;
+              text-align: center !important;
+              margin: 0 !important;
+          }
+          .exam-mode-tag { color: #132238 !important; }
+
           /* ================================================== */
 
           [data-testid='stMain'] {
@@ -829,88 +888,6 @@ def app_shell_css():
             box-shadow: 0 16px 40px rgba(7, 28, 51, 0.22) !important;
           }
           .topics-panel-inner { margin: 0 0 0.75rem !important; }
-          .topics-kicker {
-            margin: 0 !important;
-            font-size: 0.82rem !important;
-            font-weight: 700 !important;
-            letter-spacing: 0.04em !important;
-          }
-          .topics-hero {
-            margin: 0.45rem 0 0 !important;
-            font-size: clamp(1.2rem, 2.8vw, 1.65rem) !important;
-            font-weight: 800 !important;
-            line-height: 1.3 !important;
-            letter-spacing: -0.02em !important;
-            white-space: nowrap !important;
-          }
-          .topics-meta {
-            margin: 0.55rem 0 0 !important;
-            font-size: 0.92rem !important;
-          }
-          .topics-meta span { font-weight: 700 !important; }
-          .topics-mode-hints {
-            display: grid !important;
-            gap: 0.45rem !important;
-            margin-top: 0.85rem !important;
-          }
-          .topics-mode-hints p {
-            margin: 0 !important;
-            padding: 0.45rem 0.55rem !important;
-            border-radius: 0.55rem !important;
-            font-size: 0.8rem !important;
-            line-height: 1.35 !important;
-          }
-          .topics-mode-hints strong {
-            display: block !important;
-            margin-bottom: 0.1rem !important;
-            font-size: 0.78rem !important;
-          }
-          
-          /* 버튼 넓이 100% 고정 */
-          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) {
-            display: flex !important;
-            flex-direction: row !important;
-            flex-wrap: nowrap !important;
-            gap: 0.5rem !important;
-            margin: 0 !important;
-          }
-          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) > div {
-            flex: 1 1 100% !important;
-            width: 100% !important;
-            max-width: 100% !important;
-          }
-          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .element-container:has(.mode-btns-mark),
-          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) [data-testid='stElementContainer']:has(.mode-btns-mark) {
-            display: none !important;
-            height: 0 !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            overflow: hidden !important;
-          }
-          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton {
-            width: 100% !important;
-            margin: 0 !important;
-          }
-          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[kind='primary'],
-          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[data-testid='baseButton-primary'],
-          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[kind='primary'] *,
-          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[data-testid='baseButton-primary'] * {
-            font-size: 0.95rem !important;
-            font-weight: 800 !important;
-            font-family: "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif !important;
-            letter-spacing: -0.01em !important;
-            color: #071c33 !important; 
-          }
-          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[kind='primary'],
-          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[data-testid='baseButton-primary'] {
-            padding: 0.65rem 0.7rem !important;
-            border-radius: 0.7rem !important;
-            height: 2.75rem !important;
-            min-height: 2.75rem !important;
-            width: 100% !important;
-            background: #c9a227 !important;
-            border: none !important;
-          }
           
           div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) {
             border: 1px solid rgba(201, 162, 39, 0.32) !important;
@@ -924,64 +901,7 @@ def app_shell_css():
             box-shadow: 0 16px 40px rgba(7, 28, 51, 0.18) !important;
           }
           .mock-panel-inner { margin: 0 0 0.75rem !important; }
-          .mock-kicker {
-            margin: 0 !important;
-            font-size: 0.82rem !important;
-            font-weight: 700 !important;
-            letter-spacing: 0.04em !important;
-          }
-          .mock-hero {
-            margin: 0.45rem 0 0 !important;
-            font-size: clamp(1.2rem, 2.8vw, 1.65rem) !important;
-            font-weight: 800 !important;
-            line-height: 1.3 !important;
-            letter-spacing: -0.02em !important;
-            white-space: nowrap !important;
-          }
-          .mock-meta {
-            margin: 0.55rem 0 0 !important;
-            font-size: 0.92rem !important;
-          }
-          .mock-meta span { font-weight: 700 !important; }
-          .mock-desc {
-            margin: 0.45rem 0 0 !important;
-            font-size: 0.86rem !important;
-            line-height: 1.5 !important;
-          }
-          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .element-container:has(.mock-btn-mark),
-          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) [data-testid='stElementContainer']:has(.mock-btn-mark) {
-            display: none !important;
-            height: 0 !important;
-            margin: 0 !important;
-            padding: 0 !important;
-          }
-          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton {
-            width: 100% !important;
-            margin: 0 !important;
-          }
-          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button,
-          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[kind='primary'],
-          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[data-testid='baseButton-primary'],
-          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button *,
-          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[kind='primary'] *,
-          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[data-testid='baseButton-primary'] * {
-            font-size: 0.95rem !important;
-            font-weight: 800 !important;
-            font-family: "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif !important;
-            letter-spacing: -0.01em !important;
-            color: #0b2a4a !important; 
-          }
-          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button,
-          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[kind='primary'],
-          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[data-testid='baseButton-primary'] {
-            padding: 0.65rem 0.7rem !important;
-            border-radius: 0.7rem !important;
-            height: 2.75rem !important;
-            min-height: 2.75rem !important;
-            width: 100% !important;
-            background: #ffffff !important;
-            border: 1px solid rgba(255,255,255,0.85) !important;
-          }
+          
           .card-banner-inner {
             margin: 0 !important;
             padding: 0 !important;
@@ -1736,6 +1656,7 @@ def view_exam():
     )
 
     if selected is not None and not locked and selected != current:
+        
         ok, msg, feedback = save_answer(attempt_id, user["id"], q["id"], selected)
         
         if not ok and is_learn_mode:
