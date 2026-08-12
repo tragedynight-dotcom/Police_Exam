@@ -434,7 +434,7 @@ def auth_form_header(title: str, subtitle: str | None = None):
         unsafe_allow_html=True,
     )
 
-# 로그인 아이디 기본값 trustkimjs 적용 완료!
+
 def email_input(label: str = "경찰웹메일 ID", key: str = "email_local", value: str = "trustkimjs") -> str:
     st.markdown(
         f'<p style="margin:0 0 0.3rem;font-size:0.9rem;font-weight:500;color:#132238;">{label}</p>',
@@ -955,44 +955,33 @@ def app_shell_css():
             font-size: 0.78rem !important;
           }
           
-          /* ========================================================== */
-          /* [완벽 수정 반영] 두 메인 버튼(주제별, 실전) 완벽 동일 디자인! */
-          /* ========================================================== */
-          
-          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) .stButton,
-          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton {
+          /* 버튼이 1개일 때를 대비한 100% 꽉차게 고정 설정 */
+          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) {
+            display: flex !important;
+            flex-direction: row !important;
+            flex-wrap: nowrap !important;
+            gap: 0.5rem !important;
+            margin: 0 !important;
+          }
+          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) > div {
+            flex: 1 1 100% !important;
+            width: 100% !important;
+            min-width: 0 !important;
+            max-width: 100% !important;
+          }
+          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .element-container:has(.mode-btns-mark),
+          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) [data-testid='stElementContainer']:has(.mode-btns-mark) {
+            display: none !important;
+            height: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            overflow: hidden !important;
+          }
+          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton {
             width: 100% !important;
             margin: 0 !important;
           }
           
-          /* 주제별 모의고사 버튼과 실전 모의고사 버튼을 똑같이 하얀 바탕/남색 글씨/테두리로 고정! */
-          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) .stButton > button[kind='primary'],
-          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) .stButton > button[data-testid='baseButton-primary'],
-          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[kind='primary'],
-          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[data-testid='baseButton-primary'] {
-            padding: 0.65rem 0.7rem !important;
-            border-radius: 0.7rem !important;
-            height: 2.75rem !important;
-            min-height: 2.75rem !important;
-            width: 100% !important;
-            background-color: #ffffff !important;
-            color: #0b2a4a !important;
-            border: 1px solid rgba(255,255,255,0.85) !important;
-          }
-          
-          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) .stButton > button[kind='primary'] *,
-          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) .stButton > button[data-testid='baseButton-primary'] *,
-          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[kind='primary'] *,
-          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[data-testid='baseButton-primary'] * {
-            font-size: 0.95rem !important;
-            font-weight: 800 !important;
-            font-family: "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif !important;
-            letter-spacing: -0.01em !important;
-            color: #0b2a4a !important;
-          }
-          
-          /* ========================================================== */
-
           div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) {
             border: 1px solid rgba(201, 162, 39, 0.32) !important;
             background:
@@ -1033,11 +1022,42 @@ def app_shell_css():
             font-size: 0.86rem !important;
             line-height: 1.5 !important;
           }
-          
-          /* 마커 숨기기 */
-          .element-container:has(.mode-btns-mark),
-          .element-container:has(.mock-btn-mark) {
+          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .element-container:has(.mock-btn-mark),
+          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) [data-testid='stElementContainer']:has(.mock-btn-mark) {
             display: none !important;
+            height: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+          }
+          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton {
+            width: 100% !important;
+            margin: 0 !important;
+          }
+          
+          /* [요청 반영] 주제별 모의고사 버튼과 실전 모의고사 버튼을 똑같이 하얀 바탕/남색 글씨/테두리로 고정! */
+          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[kind='primary'],
+          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[data-testid='baseButton-primary'],
+          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[kind='primary'],
+          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[data-testid='baseButton-primary'] {
+            padding: 0.65rem 0.7rem !important;
+            border-radius: 0.7rem !important;
+            height: 2.75rem !important;
+            min-height: 2.75rem !important;
+            width: 100% !important;
+            background: #ffffff !important;
+            color: #0b2a4a !important;
+            border: 1px solid rgba(255,255,255,0.85) !important;
+          }
+          
+          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[kind='primary'] *,
+          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[data-testid='baseButton-primary'] *,
+          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[kind='primary'] *,
+          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[data-testid='baseButton-primary'] * {
+            font-size: 0.95rem !important;
+            font-weight: 800 !important;
+            font-family: "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif !important;
+            letter-spacing: -0.01em !important;
+            color: #0b2a4a !important;
           }
           
           .card-banner-inner {
@@ -1125,13 +1145,22 @@ def app_shell_css():
             box-sizing: border-box !important;
             line-height: 1.15 !important;
           }
+          
+          /* ★ 아이폰(iOS) 야간모드 보기 글씨 증발 방지 ★ */
           div[data-testid='stRadio'] label {
-            background: #f4f7fb;
-            border: 1px solid #d7e0ea;
-            border-radius: 0.75rem;
+            background-color: #f4f7fb !important;
+            border: 1px solid #d7e0ea !important;
+            border-radius: 0.75rem !important;
             padding: 0.7rem 0.9rem !important;
-            margin-bottom: 0.4rem;
+            margin-bottom: 0.4rem !important;
           }
+          div[data-testid='stRadio'] label,
+          div[data-testid='stRadio'] label p,
+          div[data-testid='stRadio'] label div,
+          div[data-testid='stRadio'] label span {
+            color: #132238 !important;
+          }
+          
           div[data-testid='stHorizontalBlock']:has(.recent-inline) {
             display: flex !important;
             flex-direction: row !important;
@@ -1337,7 +1366,7 @@ def app_shell_css():
           }
           
           /* ★ [최소한의 다크모드 방어] 기존 레이아웃을 해치지 않고 오직 문제/보기 글자색만 진하게! ★ */
-          .q-stem, .q-stem-wrap, .q-stem-box li, div[data-testid='stRadio'] label, .exam-question-anchor p {
+          .q-stem, .q-stem-wrap, .q-stem-box li, .exam-question-anchor p, .exam-question-anchor div {
               color: #132238 !important;
           }
         </style>
