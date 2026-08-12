@@ -32,7 +32,7 @@ public_user = _auth.public_user
 import lib.exam as _lib_exam   # noqa: E402
 
 # =====================================================================
-# [안전한 백엔드 패치] 튜플 에러 차단 (학습모드가 삭제되었으므로 방어코드만 남김)
+# [안전한 백엔드 패치] DB 튜플 에러 완벽 차단 방어막
 # =====================================================================
 if not hasattr(_lib_exam, "_orig_is_time_expired"):
     _lib_exam._orig_is_time_expired = _lib_exam.is_time_expired
@@ -95,7 +95,7 @@ def init_state():
         "dev_otp": None,
         "verify_email": "",
         "reset_email": "",
-        "topics_mode": "end",  # 모의고사(시험) 모드로 완전 고정
+        "topics_mode": "end",  # 시험(모의고사) 모드로 강제 고정
         "attempt_id": None,
         "q_index": -1,
         "feedback": None,
@@ -117,7 +117,7 @@ def restore_user_from_url():
         st.session_state._force_logout = False
         return
 
-    # 새로고침해도 로그아웃 안 되도록 URL 토큰을 절대 지우지 않습니다.
+    # [수정] 새로고침 시 로그아웃을 방지하기 위해 URL의 꼬리표(토큰)를 지우지 않습니다.
     token = st.query_params.get("auth")
 
     if st.session_state.get("user"):
@@ -397,8 +397,8 @@ def auth_form_header(title: str, subtitle: str | None = None):
         unsafe_allow_html=True,
     )
 
-# 로그인 아이디 기본값 trustkimjs 고정
-def email_input(label: str = "경찰웹메일 ID", key: str = "email_local", value: str = "trustkimjs") -> str:
+# [수정] 로그인 아이디 기본값 세팅용
+def email_input(label: str = "경찰웹메일 ID", key: str = "email_local", value: str = "") -> str:
     st.markdown(
         f'<p style="margin:0 0 0.3rem;font-size:0.9rem;font-weight:500;color:#132238;">{label}</p>',
         unsafe_allow_html=True,
@@ -452,45 +452,33 @@ def view_login():
             _login_form = st.form("login_form", clear_on_submit=False, border=False)
             
         with _login_form:
+            # 기본값으로 trustkimjs 주입!
             email = email_input(key="login_local", value="trustkimjs")
-            password = st.text_input(
-                "비밀번호",
-                type="password",
-                key="login_pw",
-                placeholder="비밀번호",
-            )
-            submitted = st.form_submit_button(
-                "로그인",
-                type="primary",
-                use_container_width=True,
-            )
+            password = st.text_input("비밀번호", type="password", key="login_pw", placeholder="비밀번호")
+            submitted = st.form_submit_button("로그인", type="primary", use_container_width=True)
             if submitted:
-                user, msg, needs_verify = login_user(email, password)
+                # 대문자/띄어쓰기 등 무조건 소문자 세탁하여 서버 에러 차단!
+                email_safe = email.strip().lower()
+                user, msg, needs_verify = login_user(email_safe, password)
                 if user:
                     login_success(user)
                 elif needs_verify:
                     st.warning(msg)
-                    go("verify", verify_email=email)
+                    go("verify", verify_email=email_safe)
                 else:
                     st.error(msg)
 
         st.markdown('<div style="height:0.25rem"></div>', unsafe_allow_html=True)
         r1a, r1b = st.columns([1.55, 1], gap="small")
         with r1a:
-            st.markdown(
-                '<p class="auth-link-label">계정이 없으신가요?&nbsp;</p>',
-                unsafe_allow_html=True,
-            )
+            st.markdown('<p class="auth-link-label">계정이 없으신가요?&nbsp;</p>', unsafe_allow_html=True)
         with r1b:
             if st.button("회원가입", type="secondary", key="login_to_register"):
                 go("register")
 
         r2a, r2b = st.columns([1.9, 1.2], gap="small")
         with r2a:
-            st.markdown(
-                '<p class="auth-link-label">비밀번호를 잊어버렸다면?&nbsp;</p>',
-                unsafe_allow_html=True,
-            )
+            st.markdown('<p class="auth-link-label">비밀번호를 잊어버렸다면?&nbsp;</p>', unsafe_allow_html=True)
         with r2b:
             if st.button("비밀번호 재설정", type="secondary", key="login_to_forgot"):
                 go("forgot")
@@ -507,18 +495,20 @@ def view_register():
         with _reg_form:
             name = st.text_input("닉네임", key="reg_name", placeholder="닉네임")
             organization = st.text_input("소속", key="reg_org", placeholder="소속")
-            email = email_input(key="reg_local")
+            # 회원가입 창은 빈칸으로 시작
+            email = email_input(key="reg_local", value="")
             password = st.text_input("비밀번호 (8자 이상)", type="password", key="reg_pw", placeholder="비밀번호")
             submitted = st.form_submit_button("인증번호 받기", type="primary", use_container_width=True)
             if submitted:
-                ok, msg, code = register_user(name, email, password, organization)
+                email_safe = email.strip().lower()
+                ok, msg, code = register_user(name, email_safe, password, organization)
                 if ok and code:
                     try:
                         from lib.mail import send_otp_email
-                        send_otp_email(email, code)
+                        send_otp_email(email_safe, code)
                         st.session_state.dev_otp = None
                         st.success("인증번호를 이메일로 발송했습니다. 메일함을 확인해 주세요.")
-                        go("verify", verify_email=email)
+                        go("verify", verify_email=email_safe)
                     except Exception as e:
                         from lib.mail import MAIL_MODULE_VERSION as _mv
                         st.error(f"인증번호 발송 실패: [mail {_mv}] {type(e).__name__}: {e!s}")
@@ -537,11 +527,12 @@ def view_verify():
         email = st.text_input("이메일", value=st.session_state.verify_email, key="verify_email_input")
         code = st.text_input("인증번호 6자리", max_chars=6, key="verify_code", placeholder="6자리")
         if st.button("인증 완료", type="primary", use_container_width=True):
-            ok, msg = verify_otp(email, code)
+            email_safe = email.strip().lower()
+            ok, msg = verify_otp(email_safe, code)
             if ok:
                 st.session_state.dev_otp = None
                 from lib.db import fetch_one
-                user = fetch_one("SELECT * FROM User WHERE email = ?", (email.strip().lower(),))
+                user = fetch_one("SELECT * FROM User WHERE email = ?", (email_safe,))
                 if user:
                     login_success(public_user(user))
                 else:
@@ -556,16 +547,17 @@ def view_verify():
 
 def view_forgot():
     def body():
-        email = email_input(key="forgot_local")
+        email = email_input(key="forgot_local", value="")
         if st.button("인증번호 받기", type="primary", use_container_width=True):
-            ok, msg, code = forgot_password(email)
+            email_safe = email.strip().lower()
+            ok, msg, code = forgot_password(email_safe)
             if ok and code:
                 try:
                     from lib.mail import send_otp_email
-                    send_otp_email(email, code)
+                    send_otp_email(email_safe, code)
                     st.session_state.dev_otp = None
                     st.success("인증번호를 발송했습니다.")
-                    go("reset", reset_email=email)
+                    go("reset", reset_email=email_safe)
                 except Exception as e:
                     st.error("메일 발송에 실패했습니다.")
             else:
@@ -586,7 +578,8 @@ def view_reset():
             if pw != pw2:
                 st.error("비밀번호가 일치하지 않습니다.")
             else:
-                ok, msg = reset_password(email, code, pw)
+                email_safe = email.strip().lower()
+                ok, msg = reset_password(email_safe, code, pw)
                 if ok:
                     st.session_state.dev_otp = None
                     st.success(msg)
@@ -616,11 +609,15 @@ def app_shell_css():
         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800;900&display=swap">
         <style>
           /* ================================================== */
-          /* [초정밀 패치 롤백] 다크모드 방어: 문제 글씨는 어둡게, 
-             파란 배너 안쪽 글씨는 완벽하게 흰색/금색으로 부활! */
+          /* [디자인 완벽 롤백] 문제 텍스트는 진하게, 파란 배너 글씨는 빛나게! */
           /* ================================================== */
           
-          /* 1. 기본 텍스트 진남색 고정 (앱 전체를 망가뜨리지 않게 타겟팅) */
+          /* 앱 전체 라이트모드 베이스 (배경을 밝게) */
+          .stApp, .main, .block-container, [data-testid="stAppViewContainer"] {
+              background-color: #f4f7fb !important;
+          }
+
+          /* 기본 텍스트들은 오직 타겟팅으로만 어두운 남색으로 고정 (무분별한 덮어쓰기 방지) */
           .stMarkdown p, .stMarkdown div, .stMarkdown span,
           div[data-testid='stRadio'] label, .q-stem, .q-stem-wrap, .q-stem-box li, 
           .exam-question-anchor p, .exam-question-anchor div,
@@ -629,55 +626,33 @@ def app_shell_css():
               color: #132238 !important;
           }
           
-          /* 2. 파란색 배너 안의 텍스트는 우선순위를 높여 흰색/금색으로 구출! */
-          .stMarkdown .topics-panel-inner p.topics-kicker,
-          .stMarkdown .mock-panel-inner p.mock-kicker {
-              color: #c9a227 !important;
-          }
-          .stMarkdown .topics-panel-inner p.topics-hero,
-          .stMarkdown .mock-panel-inner p.mock-hero,
-          .stMarkdown .topics-panel-inner p.topics-meta span,
-          .stMarkdown .mock-panel-inner p.mock-meta span,
-          .stMarkdown .topics-panel-inner div.topics-mode-hints p strong {
+          /* 파란색 배너 안쪽 글씨들을 무조건 흰색/금색으로 보호 (가장 중요) */
+          .topics-panel-inner p, .topics-panel-inner span, .topics-panel-inner div,
+          .mock-panel-inner p, .mock-panel-inner span, .mock-panel-inner div {
               color: #ffffff !important;
           }
-          .stMarkdown .topics-panel-inner p.topics-meta,
-          .stMarkdown .mock-panel-inner p.mock-desc {
+          .topics-panel-inner .topics-kicker, .mock-panel-inner .mock-kicker,
+          .topics-panel-inner .topics-mode-hints p strong {
+              color: #c9a227 !important;
+          }
+          .topics-panel-inner .topics-mode-hints p {
+              background-color: rgba(255,255,255,0.08) !important;
+              color: rgba(255,255,255,0.88) !important;
+          }
+          .topics-panel-inner .topics-meta, .mock-panel-inner .mock-desc {
               color: rgba(255,255,255,0.78) !important;
           }
-          .stMarkdown .topics-panel-inner div.topics-mode-hints p {
-              color: rgba(255,255,255,0.88) !important;
-              background: rgba(255,255,255,0.08) !important;
-          }
 
-          /* 3. 밝은 배경의 배너(전체풀기, 주제별) 안의 글씨도 확실히 어둡게 고정 */
-          .stMarkdown .card-banner-inner p.section-title,
-          .stMarkdown .card-banner-navy p.section-label { 
+          /* 밝은 배너(전체풀기 등) 안의 텍스트는 다시 어두운색 고정 */
+          .card-banner-inner p.section-title, .card-banner-navy p.section-label { 
               color: #132238 !important; 
           }
-          .stMarkdown .card-banner-inner p.section-desc { 
+          .card-banner-inner p.section-desc { 
               color: #5b6b7c !important; 
           }
 
           /* ================================================== */
-          /* 타이머 (시간) 다크모드 구출 작전 */
-          /* ================================================== */
-          #realtime-timer, .timer-pill {
-              background-color: #fff3cd !important;
-              color: #d90429 !important;
-              border: 2px solid #d90429 !important;
-              padding: 0.35rem 0.85rem !important;
-              border-radius: 20px !important;
-              font-size: 0.95rem !important;
-              font-weight: 900 !important;
-              display: inline-block !important;
-              text-align: center !important;
-              margin: 0 !important;
-          }
-          .exam-mode-tag { color: #132238 !important; }
-          
-          /* ================================================== */
-          /* 기타 기존 레이아웃 CSS들 (1줄 고정, 카드 디자인 등) */
+          /* 기타 기존 레이아웃 CSS들 */
           /* ================================================== */
           [data-testid='stMain'] {
             display: flex !important;
@@ -715,6 +690,8 @@ def app_shell_css():
               margin-right: auto !important;
             }
           }
+          
+          /* 공통 버튼 디자인 */
           .stButton > button[kind='secondary'],
           .stButton > button[data-testid='baseButton-secondary'] {
             background: #fff !important;
@@ -726,450 +703,59 @@ def app_shell_css():
             padding: 0.75rem 1rem !important;
             text-decoration: none !important;
           }
-          .stButton > button[kind='secondary']:hover {
-            background: #f4f7fb !important;
-            text-decoration: none !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.greet-title) .stButton > button[kind='secondary'],
-          div[data-testid='stHorizontalBlock']:has(.greet-title) .stButton > button[data-testid='baseButton-secondary'] {
-            width: auto !important;
-            min-width: 0 !important;
-            border: 1px solid #d7e0ea !important;
-            border-radius: 0.65rem !important;
-            font-size: 0.8rem !important;
-            font-weight: 600 !important;
-            padding: 0.45rem 0.7rem !important;
-            margin-top: 0.45rem !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.greet-title) > div:last-child {
-            flex: 0 0 auto !important;
-            width: auto !important;
-            max-width: none !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.resume-inline),
+
+          /* 기타 레이아웃 */
           div[data-testid='stHorizontalBlock']:has(.greet-title) {
             display: flex !important;
             flex-direction: row !important;
             flex-wrap: nowrap !important;
             align-items: center !important;
           }
-          div[data-testid='stHorizontalBlock']:has(.resume-inline) {
-            gap: 0.75rem !important;
+          .resume-inline {
+            display: flex !important;
+            flex-direction: column !important;
+            justify-content: center !important;
             margin: 0.5rem 0 0.65rem !important;
             padding: 0.9rem 1rem !important;
             border: 1px solid #c9a227 !important;
             background: rgba(201,162,39,0.12) !important;
             border-radius: 1rem !important;
           }
-          div[data-testid='stHorizontalBlock']:has(.resume-inline) > div:first-child {
-            display: flex !important;
-            align-items: center !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.resume-inline) [data-testid='stVerticalBlock'] {
-            gap: 0 !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.resume-inline) [data-testid='stElementContainer'],
-          div[data-testid='stHorizontalBlock']:has(.resume-inline) .element-container,
-          div[data-testid='stHorizontalBlock']:has(.resume-inline) [data-testid='stMarkdownContainer'],
-          div[data-testid='stHorizontalBlock']:has(.resume-inline) [data-testid='stMarkdownContainer'] > div {
-            margin: 0 !important;
-            padding: 0 !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.resume-inline) [data-testid='stMarkdownContainer'] p.resume-title {
-            margin: 0 !important;
-            padding: 0 !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.resume-inline) [data-testid='stMarkdownContainer'] p.resume-desc {
-            margin: 0.4rem 0 0 !important;
-            padding: 0 !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.resume-inline) .stButton {
-            margin: 0 !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.resume-inline) > div:first-child,
-          div[data-testid='stHorizontalBlock']:has(.greet-title) > div:first-child {
-            flex: 1 1 auto !important;
-            width: auto !important;
-            min-width: 0 !important;
-            max-width: none !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.resume-inline) > div:last-child,
-          div[data-testid='stHorizontalBlock']:has(.greet-title) > div:last-child {
-            flex: 0 0 auto !important;
-            width: auto !important;
-            max-width: none !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: flex-end !important;
-            padding: 0 !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.resume-inline) .stButton,
-          div[data-testid='stHorizontalBlock']:has(.resume-inline) .stButton > button {
-            width: auto !important;
-            min-width: 0 !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.resume-inline) .stButton > button {
-            font-size: 0.8rem !important;
-            font-weight: 600 !important;
-            padding: 0.5rem 0.85rem !important;
-            border-radius: 0.65rem !important;
-            white-space: nowrap !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.resume-inline) .resume-inline {
-            margin: 0 !important;
-            padding: 0 !important;
-            border: none !important;
-            background: transparent !important;
-          }
-          .resume-inline {
-            display: flex !important;
-            flex-direction: column !important;
-            justify-content: center !important;
-          }
-          .resume-title {
-            margin: 0 !important;
-            font-weight: 700 !important;
-            color: #0b2a4a !important;
-            font-size: 0.95rem !important;
-            line-height: 1.35 !important;
-          }
-          .resume-desc {
-            margin: 0.4rem 0 0 !important;
-            color: #5b6b7c !important;
-            font-size: 0.85rem !important;
-            line-height: 1.4 !important;
-          }
-          .greet-title, .damoa-title, .user-email {
-            writing-mode: horizontal-tb !important;
-          }
+          
           div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) {
             border: 1px solid rgba(201, 162, 39, 0.38) !important;
-            background:
-              radial-gradient(circle at top right, rgba(201, 162, 39, 0.22), transparent 42%),
-              linear-gradient(145deg, #071c33 0%, #0b2a4a 52%, #123b63 100%) !important;
+            background: radial-gradient(circle at top right, rgba(201, 162, 39, 0.22), transparent 42%), linear-gradient(145deg, #071c33 0%, #0b2a4a 52%, #123b63 100%) !important;
             border-radius: 1.15rem !important;
             padding: 1.25rem 1.2rem 1.05rem !important;
             margin: 0.75rem 0 1rem !important;
-            box-sizing: border-box !important;
             box-shadow: 0 16px 40px rgba(7, 28, 51, 0.22) !important;
           }
           .topics-panel-inner { margin: 0 0 0.75rem !important; }
+          .topics-kicker { margin: 0 !important; font-size: 0.82rem !important; font-weight: 700 !important; letter-spacing: 0.04em !important; }
+          .topics-hero { margin: 0.45rem 0 0 !important; font-size: clamp(1.2rem, 2.8vw, 1.65rem) !important; font-weight: 800 !important; line-height: 1.3 !important; }
+          .topics-mode-hints { display: grid !important; gap: 0.45rem !important; margin-top: 0.85rem !important; }
+          .topics-mode-hints p { margin: 0 !important; padding: 0.45rem 0.55rem !important; border-radius: 0.55rem !important; font-size: 0.8rem !important; }
           
           div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) {
             border: 1px solid rgba(201, 162, 39, 0.32) !important;
-            background:
-              radial-gradient(circle at 90% 10%, rgba(201, 162, 39, 0.16), transparent 48%),
-              linear-gradient(155deg, #0e3358 0%, #1f4e79 52%, #2d6494 100%) !important;
+            background: radial-gradient(circle at 90% 10%, rgba(201, 162, 39, 0.16), transparent 48%), linear-gradient(155deg, #0e3358 0%, #1f4e79 52%, #2d6494 100%) !important;
             border-radius: 1.15rem !important;
             padding: 1.25rem 1.2rem 1.05rem !important;
             margin: 0 0 1rem !important;
-            box-sizing: border-box !important;
             box-shadow: 0 16px 40px rgba(7, 28, 51, 0.18) !important;
           }
           .mock-panel-inner { margin: 0 0 0.75rem !important; }
-          
-          .card-banner-inner {
-            margin: 0 !important;
-            padding: 0 !important;
-            border: none !important;
-            background: transparent !important;
-            display: flex !important;
-            flex-direction: column !important;
-            justify-content: center !important;
-          }
-          .card-banner-inner .section-title {
-            margin: 0 !important;
-            font-size: 1.05rem !important;
-            line-height: 1.35 !important;
-          }
-          .card-banner-inner .section-desc {
-            margin: 0.2rem 0 0 !important;
-            font-size: 0.8rem !important;
-            line-height: 1.4 !important;
-          }
-          div[data-testid='stHorizontalBlock'] > div:has(.card-banner-inner):not(:has(.topics-panel-inner)) {
-            border: 1px solid #d7e0ea !important;
-            background: #f4f7fb !important;
-            border-radius: 1rem !important;
-            padding: 0.85rem 0.9rem !important;
-            margin: 0.35rem 0 !important;
-            box-sizing: border-box !important;
-          }
-          div[data-testid='stHorizontalBlock'] > div:has(.card-banner-inner):not(:has(.topics-panel-inner)) [data-testid='stVerticalBlock'] {
-            gap: 0 !important;
-          }
-          div[data-testid='stHorizontalBlock'] > div:has(.card-banner-inner):not(:has(.topics-panel-inner)) [data-testid='stElementContainer'],
-          div[data-testid='stHorizontalBlock'] > div:has(.card-banner-inner):not(:has(.topics-panel-inner)) .element-container,
-          div[data-testid='stHorizontalBlock'] > div:has(.card-banner-inner):not(:has(.topics-panel-inner)) [data-testid='stMarkdownContainer'],
-          div[data-testid='stHorizontalBlock'] > div:has(.card-banner-inner):not(:has(.topics-panel-inner)) [data-testid='stMarkdownContainer'] p {
-            margin: 0 !important;
-            padding-top: 0 !important;
-            padding-bottom: 0 !important;
-          }
-          div[data-testid='stHorizontalBlock'] > div:has(.card-banner-navy) {
-            border: 1px solid rgba(11,42,74,0.2) !important;
-            background: rgba(11,42,74,0.05) !important;
-          }
-          div[data-testid='stHorizontalBlock'] > div:has(.card-banner-gold) {
-            border: 1px solid #c9a227 !important;
-            background: rgba(201,162,39,0.12) !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.card-banner-btn-mark):not(:has(div[data-testid='stHorizontalBlock'])) {
-            display: flex !important;
-            flex-direction: row !important;
-            flex-wrap: nowrap !important;
-            align-items: center !important;
-            gap: 0.5rem !important;
-            margin: 0 !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.card-banner-btn-mark):not(:has(div[data-testid='stHorizontalBlock'])) > div:first-child {
-            flex: 1 1 auto !important;
-            min-width: 0 !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.card-banner-btn-mark):not(:has(div[data-testid='stHorizontalBlock'])) > div:last-child {
-            flex: 0 0 auto !important;
-            width: auto !important;
-            min-width: 4.8rem !important;
-            max-width: 7.5rem !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.card-banner-btn-mark):not(:has(div[data-testid='stHorizontalBlock'])) .element-container:has(.card-banner-btn-mark),
-          div[data-testid='stHorizontalBlock']:has(.card-banner-btn-mark):not(:has(div[data-testid='stHorizontalBlock'])) [data-testid='stElementContainer']:has(.card-banner-btn-mark) {
-            display: none !important;
-            height: 0 !important;
-            margin: 0 !important;
-            padding: 0 !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.card-banner-btn-mark):not(:has(div[data-testid='stHorizontalBlock'])) .stButton > button,
-          div[data-testid='stHorizontalBlock']:has(.card-banner-btn-mark):not(:has(div[data-testid='stHorizontalBlock'])) .stButton > button[kind='primary'],
-          div[data-testid='stHorizontalBlock']:has(.card-banner-btn-mark):not(:has(div[data-testid='stHorizontalBlock'])) .stButton > button[data-testid='baseButton-primary'] {
-            font-size: 0.72rem !important;
-            font-weight: 600 !important;
-            padding: 0.4rem 0.45rem !important;
-            min-height: 0 !important;
-            height: 2.1rem !important;
-            border-radius: 0.55rem !important;
-            white-space: nowrap !important;
-            width: 100% !important;
-            box-sizing: border-box !important;
-            line-height: 1.15 !important;
-          }
-          div[data-testid='stRadio'] label {
-            background: #f4f7fb;
-            border: 1px solid #d7e0ea;
-            border-radius: 0.75rem;
-            padding: 0.7rem 0.9rem !important;
-            margin-bottom: 0.4rem;
-          }
-          div[data-testid='stHorizontalBlock']:has(.recent-inline) {
-            display: flex !important;
-            flex-direction: row !important;
-            flex-wrap: nowrap !important;
-            align-items: center !important;
-            gap: 0.45rem !important;
-            margin: 0.35rem 0 !important;
-            padding: 0.7rem 0.85rem !important;
-            border: 1px solid #d7e0ea !important;
-            border-radius: 0.85rem !important;
-            background: #fff !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.recent-inline) > div:first-child {
-            flex: 1 1 auto !important;
-            width: auto !important;
-            min-width: 0 !important;
-            max-width: none !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.recent-inline) > div:nth-child(2),
-          div[data-testid='stHorizontalBlock']:has(.recent-inline) > div:last-child {
-            flex: 0 0 auto !important;
-            width: auto !important;
-            max-width: none !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.recent-inline) .recent-score {
-            margin: 0 !important;
-            text-align: right !important;
-            white-space: nowrap !important;
-            font-weight: 700 !important;
-            color: #0b2a4a !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.recent-inline) .stButton > button,
-          div[data-testid='stHorizontalBlock']:has(.recent-inline) .stButton > button[kind='secondary'],
-          div[data-testid='stHorizontalBlock']:has(.recent-inline) .stButton > button[data-testid='baseButton-secondary'] {
-            font-size: 0.78rem !important;
-            font-weight: 600 !important;
-            padding: 0.4rem 0.7rem !important;
-            min-height: 0 !important;
-            height: 2rem !important;
-            border-radius: 0.55rem !important;
-            white-space: nowrap !important;
-            width: auto !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.result-filter-row) {
-            display: flex !important;
-            flex-direction: row !important;
-            flex-wrap: nowrap !important;
-            align-items: center !important;
-            gap: 0.55rem !important;
-            margin: 0.55rem 0 0.35rem !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.result-filter-row) > div {
-            flex: 1 1 0 !important;
-            width: 50% !important;
-            min-width: 0 !important;
-            max-width: 50% !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.result-filter-row) .element-container:has(.result-filter-row),
-          div[data-testid='stHorizontalBlock']:has(.result-filter-row) [data-testid='stElementContainer']:has(.result-filter-row) {
-            display: none !important;
-            height: 0 !important;
-            margin: 0 !important;
-            padding: 0 !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.result-filter-row) .stButton > button,
-          div[data-testid='stHorizontalBlock']:has(.result-filter-row) .stButton > button[kind='secondary'],
-          div[data-testid='stHorizontalBlock']:has(.result-filter-row) .stButton > button[data-testid='baseButton-secondary'] {
-            font-size: 0.82rem !important;
-            font-weight: 600 !important;
-            padding: 0.45rem 0.55rem !important;
-            min-height: 0 !important;
-            height: 2.35rem !important;
-            border-radius: 0.65rem !important;
-            white-space: nowrap !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.result-stat) {
-            display: flex !important;
-            flex-direction: row !important;
-            flex-wrap: nowrap !important;
-            gap: 0.4rem !important;
-            margin: 0.55rem 0 0.75rem !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.result-stat) > div {
-            flex: 1 1 0 !important;
-            min-width: 0 !important;
-          }
-          .result-stat {
-            padding: 0.55rem 0.5rem !important;
-            border-radius: 0.7rem !important;
-            display: flex !important;
-            flex-direction: row !important;
-            align-items: center !important;
-            justify-content: center !important;
-            gap: 0.35rem !important;
-            white-space: nowrap !important;
-          }
-          .result-stat .num {
-            font-size: 0.95rem !important;
-            margin: 0 !important;
-            line-height: 1.2 !important;
-            white-space: nowrap !important;
-          }
-          .result-stat .lbl {
-            font-size: 0.72rem !important;
-            margin: 0 !important;
-            white-space: nowrap !important;
-          }
-          
-          /* ================================================== */
-          /* 네비게이션 3등분 강제 1줄 고정 CSS */
-          /* ================================================== */
-          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark),
-          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) {
-            display: flex !important;
-            flex-direction: row !important;
-            flex-wrap: nowrap !important;
-            gap: 0.35rem !important;
-            align-items: stretch !important;
-            margin: 0.35rem 0 0.15rem !important;
-          }
-          @media (max-width: 1024px) {
-            div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark),
-            div[data-testid='stHorizontalBlock']:has(.result-actions-mark) {
-                flex-direction: row !important;
-            }
-          }
-          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) > [data-testid="column"],
-          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) > [data-testid="column"] {
-            flex: 1 1 0 !important;
-            width: 33.33% !important;
-            min-width: 0 !important;
-            max-width: none !important;
-            display: block !important;
-          }
-          
-          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) .element-container:has(.exam-nav-side-mark),
-          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) [data-testid='stElementContainer']:has(.exam-nav-side-mark),
-          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) .element-container:has(.result-actions-mark),
-          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) [data-testid='stElementContainer']:has(.result-actions-mark) {
-            display: none !important;
-            height: 0 !important;
-            margin: 0 !important;
-            padding: 0 !important;
-          }
-          
-          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) .stButton,
-          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) .stButton {
-            width: 100% !important;
-            margin: 0 !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) .stButton > button,
-          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) .stButton > button {
-            font-size: 0.75rem !important;
-            font-weight: 600 !important;
-            padding: 0.35rem 0.5rem !important;
-            min-height: 0 !important;
-            height: 2rem !important;
-            border-radius: 0.55rem !important;
-            white-space: nowrap !important;
-            width: 100% !important;
-            box-sizing: border-box !important;
-            line-height: 1.2 !important;
-          }
+          .mock-kicker { margin: 0 !important; font-size: 0.82rem !important; font-weight: 700 !important; }
+          .mock-hero { margin: 0.45rem 0 0 !important; font-size: clamp(1.2rem, 2.8vw, 1.65rem) !important; font-weight: 800 !important; line-height: 1.3 !important; }
 
-          div[data-testid='stHorizontalBlock']:has(.topics-chips-mark) {
-            display: flex !important;
-            flex-direction: row !important;
-            flex-wrap: nowrap !important;
-            gap: 0.35rem !important;
-            align-items: stretch !important;
-            margin: 0.55rem 0 0.75rem !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.topics-chips-mark) > div {
-            flex: 1 1 0 !important;
-            width: auto !important;
-            min-width: 0 !important;
-            max-width: none !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.topics-chips-mark) .element-container:has(.topics-chips-mark),
-          div[data-testid='stHorizontalBlock']:has(.topics-chips-mark) [data-testid='stElementContainer']:has(.topics-chips-mark) {
-            display: none !important;
-            height: 0 !important;
-            margin: 0 !important;
-            padding: 0 !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.topics-chips-mark) .stButton {
-            width: 100% !important;
-            margin: 0 !important;
-          }
-          div[data-testid='stHorizontalBlock']:has(.topics-chips-mark) .stButton > button,
-          div[data-testid='stHorizontalBlock']:has(.topics-chips-mark) .stButton > button[kind='secondary'],
-          div[data-testid='stHorizontalBlock']:has(.topics-chips-mark) .stButton > button[data-testid='baseButton-secondary'],
-          div[data-testid='stHorizontalBlock']:has(.topics-chips-mark) .stButton > button[kind='primary'],
-          div[data-testid='stHorizontalBlock']:has(.topics-chips-mark) .stButton > button[data-testid='baseButton-primary'] {
-            font-size: 0.75rem !important;
-            font-weight: 600 !important;
-            padding: 0.4rem 0.35rem !important;
-            min-height: 0 !important;
-            height: 2.15rem !important;
-            border-radius: 0.55rem !important;
-            white-space: nowrap !important;
-            width: 100% !important;
-            box-sizing: border-box !important;
-            line-height: 1.2 !important;
-          }
+          .card-banner-inner { border: 1px solid #d7e0ea !important; background: #f4f7fb !important; border-radius: 1rem !important; padding: 0.85rem 0.9rem !important; margin: 0.35rem 0 !important; }
+          .card-banner-navy { border: 1px solid rgba(11,42,74,0.2) !important; background: rgba(11,42,74,0.05) !important; }
         </style>
         """
     )
     
-    # --------- 오디오 및 자바스크립트 기반 강력한 버튼 디자인/정렬 ---------
+    # --------- 오디오 및 [강력한 JS 기반 버튼 색상/정렬 시스템] ---------
+    # 투명 마커로 텍스트가 날아가는 사고를 막기 위해 마커 없이 돔 구조를 직접 찾아 칠합니다!
     components.html(
         """
         <script>
@@ -1229,11 +815,46 @@ def app_shell_css():
                 }, true);
             }
 
-            // 하단 3버튼 가로 1줄 고정 및 대시보드 버튼 황금색/빨간색 디자인 강제 주입!
             setInterval(function() {
                 
-                // 1. 하단 3버튼 가로 1줄 고정 강제 적용
-                var marks = doc.querySelectorAll('.exam-nav-side-mark, .result-actions-mark, .topics-chips-mark');
+                // 1. [주제별 모의고사] 버튼 황금색 고정 (투명 마커 없이 부모를 찾아서 안전하게 칠함)
+                doc.querySelectorAll('.topics-panel-inner').forEach(function(panel) {
+                    var col = panel.closest('[data-testid="column"]');
+                    if (col) {
+                        var btn = col.querySelector('button');
+                        if (btn) {
+                            btn.style.setProperty('background-color', '#c9a227', 'important');
+                            btn.style.setProperty('color', '#ffffff', 'important');
+                            btn.style.setProperty('border', 'none', 'important');
+                            btn.style.setProperty('font-size', '1.05rem', 'important');
+                            btn.style.setProperty('font-weight', '800', 'important');
+                            btn.style.setProperty('height', '3.2rem', 'important');
+                            btn.style.setProperty('border-radius', '0.8rem', 'important');
+                            btn.style.setProperty('width', '100%', 'important');
+                        }
+                    }
+                });
+
+                // 2. [실전 모의고사] 버튼 흰색/빨간글씨 고정
+                doc.querySelectorAll('.mock-panel-inner').forEach(function(panel) {
+                    var col = panel.closest('[data-testid="column"]');
+                    if (col) {
+                        var btn = col.querySelector('button');
+                        if (btn) {
+                            btn.style.setProperty('background-color', '#ffffff', 'important');
+                            btn.style.setProperty('color', '#e63946', 'important');
+                            btn.style.setProperty('border', '2px solid #e63946', 'important');
+                            btn.style.setProperty('font-size', '1.05rem', 'important');
+                            btn.style.setProperty('font-weight', '800', 'important');
+                            btn.style.setProperty('height', '3.2rem', 'important');
+                            btn.style.setProperty('border-radius', '0.8rem', 'important');
+                            btn.style.setProperty('width', '100%', 'important');
+                        }
+                    }
+                });
+
+                // 3. 문제 풀이 하단 3버튼 가로 1줄 고정 적용
+                var marks = doc.querySelectorAll('.exam-nav-side-mark, .result-actions-mark');
                 marks.forEach(function(mark) {
                     var block = mark.closest('[data-testid="stHorizontalBlock"]');
                     if (block) {
@@ -1256,48 +877,8 @@ def app_shell_css():
                             }
                         });
                     }
-                });
-
-                // 2. [주제별 모의고사] 버튼 황금색 고정
-                doc.querySelectorAll('.mode-btns-mark').forEach(function(mark) {
-                    var el = mark.closest('[data-testid="stElementContainer"]');
-                    if (el && el.nextElementSibling) {
-                        var btn = el.nextElementSibling.querySelector('button');
-                        if (btn) {
-                            btn.style.setProperty('background-color', '#c9a227', 'important');
-                            btn.style.setProperty('color', '#ffffff', 'important');
-                            btn.style.setProperty('border', 'none', 'important');
-                            btn.style.setProperty('font-size', '1.05rem', 'important');
-                            btn.style.setProperty('font-weight', '800', 'important');
-                            btn.style.setProperty('height', '3.2rem', 'important');
-                            btn.style.setProperty('border-radius', '0.8rem', 'important');
-                            btn.style.setProperty('width', '100%', 'important');
-                        }
-                    }
-                });
-
-                // 3. [실전 모의고사] 버튼 흰색/빨간글씨 고정
-                doc.querySelectorAll('.mock-btn-mark').forEach(function(mark) {
-                    var el = mark.closest('[data-testid="stElementContainer"]');
-                    if (el && el.nextElementSibling) {
-                        var btn = el.nextElementSibling.querySelector('button');
-                        if (btn) {
-                            btn.style.setProperty('background-color', '#ffffff', 'important');
-                            btn.style.setProperty('color', '#e63946', 'important');
-                            btn.style.setProperty('border', '2px solid #e63946', 'important');
-                            btn.style.setProperty('font-size', '1.05rem', 'important');
-                            btn.style.setProperty('font-weight', '800', 'important');
-                            btn.style.setProperty('height', '3.2rem', 'important');
-                            btn.style.setProperty('border-radius', '0.8rem', 'important');
-                            btn.style.setProperty('width', '100%', 'important');
-                        }
-                    }
-                });
-
-                // 4. 모든 투명 마커 숨기기
-                doc.querySelectorAll('.mode-btns-mark, .mock-btn-mark, .exam-nav-side-mark, .result-actions-mark, .topics-chips-mark').forEach(function(mark) {
-                    var el = mark.closest('[data-testid="stElementContainer"]');
-                    if (el) el.style.setProperty('display', 'none', 'important');
+                    // 마커 자신만 숨기기 (텍스트가 통째로 사라지는 사고 방지!)
+                    mark.style.setProperty('display', 'none', 'important');
                 });
                 
             }, 300);
@@ -1402,7 +983,6 @@ def view_dashboard():
             """,
             unsafe_allow_html=True,
         )
-        st.markdown('<div class="mode-btns-mark"></div>', unsafe_allow_html=True)
         if st.button("주제별 모의고사 시작", type="primary", use_container_width=True, key="dash_exam"):
             go("topics", topics_mode="end")
 
@@ -1418,7 +998,6 @@ def view_dashboard():
             """,
             unsafe_allow_html=True,
         )
-        st.markdown('<div class="mock-btn-mark"></div>', unsafe_allow_html=True)
         if st.button("실전 모의고사 풀기", type="primary", use_container_width=True, key="dash_mock"):
             aid, err = start_exam(user["id"], kind="mock", reveal_mode="end", force_new=True)
             if err:
@@ -1482,15 +1061,17 @@ def view_topics():
         <p class="damoa-brand">지역 경찰 실무 역량 평가 DaMoa</p>
         <p class="damoa-title">주제별 모의고사</p>
         <p class="damoa-muted" style="margin-top:0.45rem;">
-          시험 모드: 주제별 랜덤 출제로 진행되며, 다 풀고 난 뒤에 해설을 제공합니다.
+          제한 시간 안에 주제별 랜덤 출제로 진행되며, 다 풀고 난 뒤에 해설을 제공합니다.
         </p>
         """,
         unsafe_allow_html=True,
     )
 
-    st.markdown('<div class="topics-chips-mark"></div>', unsafe_allow_html=True)
-    if st.button("홈으로", type="secondary", use_container_width=True, key="topics_home"):
+    # 심플하고 예쁜 뒤로가기 버튼
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("← 홈으로 돌아가기", key="topics_home", type="secondary"):
         go("dashboard")
+    st.markdown("<br>", unsafe_allow_html=True)
 
     active = get_active_attempt(user["id"])
     if active:
@@ -1618,6 +1199,22 @@ def view_exam():
         else ""
     )
     
+    # 타이머 디자인 노란 바탕, 빨간 글씨로 인라인 완벽 고정
+    timer_display = (
+        '<div id="realtime-timer" class="timer-pill" style="'
+        'background-color: #fff3cd !important; '
+        'color: #d90429 !important; '
+        'border: 2px solid #d90429 !important; '
+        'padding: 0.35rem 0.85rem !important; '
+        'border-radius: 20px !important; '
+        'font-size: 0.95rem !important; '
+        'font-weight: 900 !important; '
+        'display: inline-block !important; '
+        'text-align: center !important; '
+        'margin: 0 !important;'
+        f'">남은 시간 {mm:02d}:{ss:02d}</div>'
+    )
+
     st.markdown(
         f"""
         <div class="exam-page-top exam-top" id="exam-page-top" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
@@ -1629,7 +1226,7 @@ def view_exam():
             <p style="margin:0.4rem 0 0;color:#0b2a4a;font-weight:700;">진행 {answered}/{attempt["totalCount"]}</p>
             {cat_line}
           </div>
-          <div id="realtime-timer" class="timer-pill">남은 시간 {mm:02d}:{ss:02d}</div>
+          {timer_display}
         </div>
         """,
         unsafe_allow_html=True,
@@ -1709,7 +1306,7 @@ def view_exam():
     nav_l, nav_m, nav_r = st.columns(3, gap="small")
     
     with nav_l:
-        st.markdown('<div class="exam-nav-side-mark"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="exam-nav-side-mark" style="display:none;"></div>', unsafe_allow_html=True)
         if st.button("이전", disabled=idx <= 0, use_container_width=True, type="secondary", key="exam_prev"):
             st.session_state.q_index = idx - 1
             st.session_state.feedback = None
@@ -1820,26 +1417,12 @@ def view_result():
         )
         c1, c2, c3 = st.columns(3, gap="small")
         with c1:
-            st.markdown(
-                '<div class="result-actions-mark"></div>',
-                unsafe_allow_html=True,
-            )
-            if st.button(
-                "홈으로",
-                use_container_width=True,
-                type="secondary",
-                key=f"{key_prefix}_home",
-            ):
+            st.markdown('<div class="result-actions-mark" style="display:none;"></div>', unsafe_allow_html=True)
+            if st.button("홈으로", use_container_width=True, type="secondary", key=f"{key_prefix}_home"):
                 go("dashboard")
         with c2:
             can_retry_wrong = bool(wrongs)
-            if st.button(
-                "틀린 문제 다시 풀기",
-                use_container_width=True,
-                type="secondary",
-                key=f"{key_prefix}_retry_wrong",
-                disabled=not can_retry_wrong,
-            ):
+            if st.button("틀린 문제 다시 풀기", use_container_width=True, type="secondary", key=f"{key_prefix}_retry_wrong", disabled=not can_retry_wrong):
                 aid, err = start_exam(
                     user["id"],
                     kind=attempt["kind"],
@@ -1853,12 +1436,7 @@ def view_result():
                 else:
                     go("exam", attempt_id=aid, q_index=-1, feedback=None)
         with c3:
-            if st.button(
-                "다시 응시하기",
-                use_container_width=True,
-                type="secondary",
-                key=f"{key_prefix}_retry_all",
-            ):
+            if st.button("다시 응시하기", use_container_width=True, type="secondary", key=f"{key_prefix}_retry_all"):
                 aid, err = start_exam(
                     user["id"],
                     kind=attempt["kind"],
@@ -2003,6 +1581,7 @@ def view_result():
 
 def main():
     init_state()
+    app_shell_css()
     restore_user_from_url()
     view = st.session_state.view
     if st.session_state.user and view in {"login", "register"}:
