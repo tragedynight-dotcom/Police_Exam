@@ -102,7 +102,7 @@ from lib.exam import (  # noqa: E402
 )
 
 st.set_page_config(
-    page_title="지역 경찰 실무 역량 평가 DaMoa",
+    page_title="지역 경찰 실무 역량 평가 다통과",
     page_icon="🛡️",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -378,7 +378,7 @@ def card_end():
 
 def brand_line(extra: str = ""):
     st.markdown(
-        f'<div class="damoa-brand">지역 경찰 실무 역량 평가 DaMoa {extra}</div>',
+        f'<div class="damoa-brand">지역 경찰 실무 역량 평가 다통과 {extra}</div>',
         unsafe_allow_html=True,
     )
 
@@ -388,11 +388,11 @@ def auth_left_panel():
         """
         <div class="auth-left">
           <div>
-            <p class="auth-eyebrow">지역경찰 역량 강화를 위한 실무 역량 평가 DaMoa</p>
+            <p class="auth-eyebrow">지역경찰 역량 강화를 위한 실무 역량 평가 다통과</p>
             <h1 class="auth-hero">
               <span style="white-space:nowrap">지역경찰 역량 강화를 위한</span><br/>
               실무 역량 평가<br/>
-              DaMoa
+              다통과
             </h1>
             <p class="auth-lead">
               @police.go.kr 이메일 인증을 완료한 경찰관만 이용할 수 있는
@@ -417,7 +417,7 @@ def auth_form_header(title: str, subtitle: str | None = None):
     sub = f'<p class="auth-sub">{subtitle}</p>' if subtitle else ""
     st.markdown(
         f"""
-        <p class="auth-brand-link">지역경찰 역량 강화를 위한 실무 역량 평가 DaMoa</p>
+        <p class="auth-brand-link">지역경찰 역량 강화를 위한 실무 역량 평가 다통과</p>
         <h2 class="auth-title">{title}</h2>
         {sub}
         """,
@@ -1490,7 +1490,7 @@ def view_dashboard():
     st.markdown(
         f"""
         <div style="display:flex;align-items:center;gap:0.5rem;">
-          <p class="damoa-brand" style="margin:0;">지역 경찰 실무 역량 평가 DaMoa</p>
+          <p class="damoa-brand" style="margin:0;">지역 경찰 실무 역량 평가 다통과</p>
           <span class="damoa-badge">인증됨</span>
         </div>
         """,
@@ -1620,7 +1620,7 @@ def view_topics():
 
     st.markdown(
         f"""
-        <p class="damoa-brand">지역 경찰 실무 역량 평가 DaMoa</p>
+        <p class="damoa-brand">지역 경찰 실무 역량 평가 다통과</p>
         <p class="damoa-title">주제별 모의고사</p>
         <p class="damoa-muted" style="margin-top:0.45rem;">
           제한 시간 안에 주제별 랜덤 출제로 진행되며, 다 풀고 난 뒤에 해설을 제공합니다.
@@ -1770,7 +1770,7 @@ def view_exam():
         <div class="exam-page-top exam-top" id="exam-page-top">
           <div>
             <p class="damoa-brand" style="margin:0;">
-              지역 경찰 실무 역량 평가 DaMoa
+              지역 경찰 실무 역량 평가 다통과
               <span class="exam-mode-tag {mode_cls}">· {mode_label}</span>
             </p>
             <p style="margin:0.4rem 0 0;color:#0b2a4a;font-weight:700;">진행 {answered}/{attempt["totalCount"]}</p>
@@ -1951,7 +1951,7 @@ def view_result():
     wrongs = [q for q in questions if not q["isCorrect"]]
 
     st.markdown(
-        '<p class="damoa-brand">지역 경찰 실무 역량 평가 DaMoa</p>',
+        '<p class="damoa-brand">지역 경찰 실무 역량 평가 다통과</p>',
         unsafe_allow_html=True,
     )
     st.markdown(
