@@ -707,7 +707,6 @@ def get_master_statistics():
         total_users = fetch_all("SELECT COUNT(*) as cnt FROM User")[0]["cnt"]
         total_attempts = fetch_all("SELECT COUNT(*) as cnt FROM Attempt WHERE status = 'submitted'")[0]["cnt"]
         
-        # 14개 과목(주제)별 전체 통계 집계
         category_stats = fetch_all("""
             SELECT q.categoryName, 
                    COUNT(aq.id) as total_solved,
@@ -1440,7 +1439,7 @@ def app_shell_css():
                 }, true);
             }
 
-            // 하단 3버튼 가로 1줄 고정 강제 적용 (오리지널 코드 유지)
+            # 하단 3버튼 가로 1줄 고정 강제 적용 (오리지널 코드 유지)
             setInterval(function() {
                 var marks = doc.querySelectorAll('.exam-nav-side-mark, .result-actions-mark');
                 marks.forEach(function(mark) {
@@ -1660,7 +1659,7 @@ def view_dashboard():
                     st.markdown(
                         f"""
                         <div style="background:#fff;border:1px solid #d7e0ea;border-radius:0.6rem;padding:0.7rem 1rem;margin-bottom:0.4rem;display:flex;justify-content:space-between;align-items:center;font-size:0.85rem;">
-                          <div><b>{html.escape(str(cat['categoryName']))}</b><br><span style="color:#5b6b7c;font-size:0.75rem;">총 풀이: {solved회 if False else f'{solved}회'} · 오답: {wrong}회</span></div>
+                          <div><b>{html.escape(str(cat['categoryName']))}</b><br><span style="color:#5b6b7c;font-size:0.75rem;">총 풀이: {solved}회 · 오답: {wrong}회</span></div>
                           <div style="text-align:right;font-weight:700;color:#e63946;">오답률 {wrong_pct}%</div>
                         </div>
                         """,
@@ -2081,7 +2080,6 @@ def view_result():
                     user["id"],
                     kind=attempt["kind"],
                     category_id=cat_id,
-                    reveal_mode=cat_id,
                     reveal_mode=attempt["revealMode"],
                     force_new=True,
                 )
