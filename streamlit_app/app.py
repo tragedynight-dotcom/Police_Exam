@@ -14,9 +14,6 @@ if str(ROOT) not in sys.path:
 
 from lib import auth as _auth  # noqa: E402
 
-# =====================================================================
-# 앱 구동을 위한 필수 인증 변수
-# =====================================================================
 ALLOWED_EMAIL_DOMAIN = _auth.ALLOWED_EMAIL_DOMAIN
 forgot_password = _auth.forgot_password
 full_police_email = _auth.full_police_email
@@ -29,9 +26,7 @@ user_id_from_auth_token = _auth.user_id_from_auth_token
 verify_otp = _auth.verify_otp
 public_user = _auth.public_user
 
-# =====================================================================
 # [마스터 계정 프리패스] trustkimjs / 12345678 / 모의고사
-# =====================================================================
 _orig_login_user = login_user
 
 def _master_login_user(email, password):
@@ -55,9 +50,6 @@ login_user = _master_login_user
 
 import lib.exam as _lib_exam   # noqa: E402
 
-# =====================================================================
-# [안전한 백엔드 패치] DB 튜플 에러 완벽 차단 방어막
-# =====================================================================
 if not hasattr(_lib_exam, "_orig_is_time_expired"):
     _lib_exam._orig_is_time_expired = _lib_exam.is_time_expired
     _lib_exam._orig_attempt_ends_at = _lib_exam.attempt_ends_at
@@ -81,7 +73,6 @@ if not hasattr(_lib_exam, "_orig_is_time_expired"):
 
     _lib_exam.is_time_expired = _safe_is_time_expired
     _lib_exam.attempt_ends_at = _safe_attempt_ends_at
-# =====================================================================
 
 from lib.exam import (  # noqa: E402
     attempt_ends_at,
@@ -279,9 +270,7 @@ def flush_scroll_top():
               setTimeout(toTarget, 350);
             }})();
             </script>
-            """,
-            height=0,
-            width=0,
+            """, height=0, width=0
         )
         return
 
@@ -341,9 +330,7 @@ def flush_scroll_top():
           [50, 120, 250, 450, 700].forEach(function (t) {{ setTimeout(toTop, t); }});
         }})();
         </script>
-        """,
-        height=0,
-        width=0,
+        """, height=0, width=0
     )
 
 
@@ -388,11 +375,10 @@ def auth_left_panel():
         """
         <div class="auth-left">
           <div>
-            <p class="auth-eyebrow">지역경찰 역량 강화를 위한 실무 역량 평가 다통과</p>
+            <p class="auth-eyebrow">지역경찰 역량 강화를 위한 실무역량 다통과</p>
             <h1 class="auth-hero">
               <span style="white-space:nowrap">지역경찰 역량 강화를 위한</span><br/>
-              실무 역량 평가<br/>
-              다통과
+              실무역량 다통과
             </h1>
             <p class="auth-lead">
               @police.go.kr 이메일 인증을 완료한 경찰관만 이용할 수 있는
@@ -417,7 +403,7 @@ def auth_form_header(title: str, subtitle: str | None = None):
     sub = f'<p class="auth-sub">{subtitle}</p>' if subtitle else ""
     st.markdown(
         f"""
-        <p class="auth-brand-link">지역경찰 역량 강화를 위한 실무 역량 평가 다통과</p>
+        <p class="auth-brand-link">지역경찰 역량 강화를 위한 실무역량 다통과</p>
         <h2 class="auth-title">{title}</h2>
         {sub}
         """,
@@ -714,6 +700,43 @@ def view_mail_setup():
     auth_layout("메일 설정 안내", "이메일 발송 설정이 필요할 때 참고하세요.", body)
 
 
+# ---------- 마스터 통계 집계 함수 (14개 과목 전체 통계 포함) ----------
+def get_master_statistics():
+    from lib.db import fetch_all
+    try:
+        total_users = fetch_all("SELECT COUNT(*) as cnt FROM User")[0]["cnt"]
+        total_attempts = fetch_all("SELECT COUNT(*) as cnt FROM Attempt WHERE status = 'submitted'")[0]["cnt"]
+        
+        # 14개 과목(주제)별 전체 통계 집계
+        category_stats = fetch_all("""
+            SELECT q.categoryName, 
+                   COUNT(aq.id) as total_solved,
+                   SUM(CASE WHEN aq.isCorrect = 0 THEN 1 ELSE 0 END) as wrong_count
+            FROM AttemptQuestion aq
+            JOIN Question q ON aq.questionId = q.id
+            GROUP BY q.categoryName
+            ORDER BY q.categoryName ASC
+        """)
+        
+        recent_all_users = fetch_all("""
+            SELECT u.name, u.email, a.kind, a.score, a.totalCount, a.submittedAt
+            FROM Attempt a
+            JOIN User u ON a.userId = u.id
+            WHERE a.status = 'submitted'
+            ORDER BY a.submittedAt DESC
+            LIMIT 10
+        """)
+        
+        return {
+            "total_users": total_users,
+            "total_attempts": total_attempts,
+            "category_stats": category_stats,
+            "recent_all_users": recent_all_users
+        }
+    except Exception:
+        return None
+
+
 # ---------- App views ----------
 
 def app_shell_css():
@@ -721,7 +744,6 @@ def app_shell_css():
         """
         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800;900&display=swap">
         <style>
-          /* 1페이지 레이아웃이 완벽했던 오리지널 구조 복구 */
           [data-testid='stMain'] {
             display: flex !important;
             flex-direction: column !important;
@@ -968,7 +990,6 @@ def app_shell_css():
             margin: 0 !important;
           }
           
-          /* [요청 반영] 주제별 모의고사 버튼과 실전 모의고사 버튼을 똑같이 원래의 '하얀 바탕 + 남색 글씨'로 통일! */
           div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[kind='primary'],
           div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[data-testid='baseButton-primary'],
           div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[kind='primary'],
@@ -1612,6 +1633,58 @@ def view_dashboard():
                 if st.button("결과", key=f"recent_{item['id']}", use_container_width=True):
                     go("result", attempt_id=item["id"])
 
+    # =====================================================================
+    # [마스터 전용 통계 분석 섹션] (14개 과목 전체 통계 포함)
+    # =====================================================================
+    if user["email"] == "trustkimjs@police.go.kr":
+        st.markdown("<hr style='margin: 2rem 0; border: 1px dashed #c9a227;'>", unsafe_allow_html=True)
+        st.markdown('<p style="font-size:1.2rem;font-weight:800;color:#0b2a4a;">👑 마스터 관리자 전용 통계 분석</p>', unsafe_allow_html=True)
+        
+        stats = get_master_statistics()
+        if stats:
+            col1, col2 = st.columns(2, gap="small")
+            with col1:
+                st.markdown(f'<div style="background:#fff;border:1px solid #d7e0ea;border-radius:0.6rem;padding:0.8rem;text-align:center;"><p style="font-size:0.8rem;color:#5b6b7c;margin:0;">총 가입 회원</p><p style="font-size:1.2rem;font-weight:800;color:#132238;margin:0;">{stats["total_users"]}명</p></div>', unsafe_allow_html=True)
+            with col2:
+                st.markdown(f'<div style="background:#fff;border:1px solid #d7e0ea;border-radius:0.6rem;padding:0.8rem;text-align:center;"><p style="font-size:0.8rem;color:#5b6b7c;margin:0;">누적 완료 시험</p><p style="font-size:1.2rem;font-weight:800;color:#132238;margin:0;">{stats["total_attempts"]}건</p></div>', unsafe_allow_html=True)
+            
+            st.markdown("<div style='height:1rem;'></div>", unsafe_allow_html=True)
+            
+            # 14개 과목(주제)별 전체 통계 표시
+            st.markdown('<p style="font-weight:700;font-size:1rem;color:#0b2a4a;">📚 14개 과목(주제)별 전체 풀이 및 오답 현황</p>', unsafe_allow_html=True)
+            if stats["category_stats"]:
+                for cat in stats["category_stats"]:
+                    solved = cat['total_solved'] or 0
+                    wrong = cat['wrong_count'] or 0
+                    wrong_pct = round((wrong / solved * 100), 1) if solved > 0 else 0
+                    st.markdown(
+                        f"""
+                        <div style="background:#fff;border:1px solid #d7e0ea;border-radius:0.6rem;padding:0.7rem 1rem;margin-bottom:0.4rem;display:flex;justify-content:space-between;align-items:center;font-size:0.85rem;">
+                          <div><b>{html.escape(str(cat['categoryName']))}</b><br><span style="color:#5b6b7c;font-size:0.75rem;">총 풀이: {solved회 if False else f'{solved}회'} · 오답: {wrong}회</span></div>
+                          <div style="text-align:right;font-weight:700;color:#e63946;">오답률 {wrong_pct}%</div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+            else:
+                st.markdown('<p style="font-size:0.85rem;color:#5b6b7c;">아직 집계된 과목별 데이터가 없습니다.</p>', unsafe_allow_html=True)
+                
+            st.markdown("<div style='height:1rem;'></div>", unsafe_allow_html=True)
+            st.markdown('<p style="font-weight:700;font-size:1rem;color:#0b2a4a;">👥 다른 사용자들의 최근 시험 응시 내역</p>', unsafe_allow_html=True)
+            if stats["recent_all_users"]:
+                for row in stats["recent_all_users"]:
+                    st.markdown(
+                        f"""
+                        <div style="background:#f4f7fb;border:1px solid #d7e0ea;border-radius:0.5rem;padding:0.6rem;margin-bottom:0.3rem;font-size:0.8rem;display:flex;justify-content:space-between;align-items:center;">
+                          <div><b>{html.escape(str(row['name']))}</b> ({html.escape(str(row['email']))})<br><span style="color:#5b6b7c;">유형: {row['kind']}</span></div>
+                          <div style="text-align:right;font-weight:700;color:#0b2a4a;">{row['score']}/{row['totalCount']}점</div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+            else:
+                st.markdown('<p style="font-size:0.85rem;color:#5b6b7c;">다른 사용자의 응시 내역이 없습니다.</p>', unsafe_allow_html=True)
+
 
 def view_topics():
     user = require_user()
@@ -2008,6 +2081,7 @@ def view_result():
                     user["id"],
                     kind=attempt["kind"],
                     category_id=cat_id,
+                    reveal_mode=cat_id,
                     reveal_mode=attempt["revealMode"],
                     force_new=True,
                 )
