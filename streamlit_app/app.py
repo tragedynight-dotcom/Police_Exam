@@ -707,8 +707,8 @@ def get_master_statistics():
         submitted_attempts = fetch_all("SELECT * FROM Attempt WHERE status = 'submitted'")
         total_attempts = len(submitted_attempts)
         
-        category_data = {} # categoryName -> {"total": 0, "wrong": 0}
-        question_data = {} # questionId -> dict
+        category_data = {} 
+        question_data = {} 
         
         for att in submitted_attempts:
             att_id = att["id"] if isinstance(att, dict) else att["id"]
@@ -733,7 +733,11 @@ def get_master_statistics():
                             question_data[q_id] = {
                                 "categoryName": cat_name,
                                 "stem": q.get("stem", ""),
+                                "choicesJson": q.get("choicesJson", "[]"),
+                                "answerIndex": q.get("answerIndex", 0),
+                                "explanation": q.get("explanation", ""),
                                 "source": q.get("source", ""),
+                                "imagePath": q.get("imagePath", ""),
                                 "total_solved": 0,
                                 "wrong_count": 0
                             }
@@ -752,33 +756,22 @@ def get_master_statistics():
                 "wrong_count": category_data[cat_name]["wrong"]
             })
             
-        detailed_worst_questions = sorted(
+        all_worst_questions = sorted(
             [q for q in question_data.values() if q["wrong_count"] > 0],
             key=lambda x: x["wrong_count"],
             reverse=True
-        )[:10]
-        
-        recent_all_users = fetch_all("""
-            SELECT u.name, u.email, a.kind, a.score, a.totalCount, a.submittedAt
-            FROM Attempt a
-            JOIN User u ON a.userId = u.id
-            WHERE a.status = 'submitted'
-            ORDER BY a.submittedAt DESC
-            LIMIT 10
-        """)
+        )
         
         return {
             "total_attempts": total_attempts,
             "category_stats": category_stats,
-            "detailed_worst_questions": detailed_worst_questions,
-            "recent_all_users": recent_all_users
+            "all_worst_questions": all_worst_questions
         }
     except Exception as e:
         return {
             "total_attempts": 0,
             "category_stats": [],
-            "detailed_worst_questions": [],
-            "recent_all_users": [],
+            "all_worst_questions": [],
             "error": str(e)
         }
 
@@ -1691,7 +1684,7 @@ def view_dashboard():
 
 
 # =====================================================================
-# [마스터 전용 통계 분석 새 페이지 뷰] (총 가입 회원 삭제 및 Row 객체 대응 완료)
+# [마스터 전용 통계 분석 새 페이지 뷰] (과목별 필터 및 클릭 시 상세 보기 구현)
 # =====================================================================
 def view_master_stats():
     user = require_user()
@@ -1722,18 +1715,19 @@ def view_master_stats():
             
         st.markdown("<div style='height:0.5rem;'></div>", unsafe_allow_html=True)
         
-        # 누적 완료 시험 카드만 단독으로 중앙/전체 폭에 맞게 표시
+        # 누적 완료 시험 건수 카드
         st.markdown(f'<div style="background:#fff;border:1px solid #d7e0ea;border-radius:0.6rem;padding:1rem;text-align:center;"><p style="font-size:0.85rem;color:#5b6b7c;margin:0;">누적 완료 시험</p><p style="font-size:1.5rem;font-weight:800;color:#132238;margin:0.2rem 0 0;">{stats.get("total_attempts", 0)}건</p></div>', unsafe_allow_html=True)
         
         st.markdown("<div style='height:1rem;'></div>", unsafe_allow_html=True)
         
         # 14개 과목 전체 통계
         st.markdown('<p style="font-weight:700;font-size:1.05rem;color:#0b2a4a;">📚 14개 과목(주제)별 전체 풀이 및 오답 현황</p>', unsafe_allow_html=True)
-        if stats.get("category_stats"):
-            for cat in stats["category_stats"]:
-                solved = cat["total_solved"] if isinstance(cat, dict) else cat[1]
-                wrong = cat["wrong_count"] if isinstance(cat, dict) else cat[2]
-                cat_name = cat["categoryName"] if isinstance(cat, dict) else cat[0]
+        cat_stats = stats.get("category_stats", [])
+        if cat_stats:
+            for cat in cat_stats:
+                solved = cat["total_solved"]
+                wrong = cat["wrong_count"]
+                cat_name = cat["categoryName"]
                 wrong_pct = round((wrong / solved * 100), 1) if solved > 0 else 0
                 st.markdown(
                     f"""
@@ -1749,49 +1743,44 @@ def view_master_stats():
 
         st.markdown("<div style='height:1rem;'></div>", unsafe_allow_html=True)
 
-        # 디테일 오답 문항 분석 (지문 포함)
-        st.markdown('<p style="font-weight:700;font-size:1.05rem;color:#e63946;">⚠️ 수험생들이 가장 많이 틀린 구체적인 문항 분석 (TOP 10)</p>', unsafe_allow_html=True)
-        if stats.get("detailed_worst_questions"):
-            for idx, wq in enumerate(stats["detailed_worst_questions"], 1):
-                c_name = wq["categoryName"] if isinstance(wq, dict) else wq[0]
-                c_stem = wq["stem"] if isinstance(wq, dict) else wq[1]
-                w_cnt = wq["wrong_count"] if isinstance(wq, dict) else wq[3]
-                t_sol = wq["total_solved"] if isinstance(wq, dict) else wq[4]
-                
-                stem_text = strip_difficulty_marker(c_stem or '')
-                stem_preview = (stem_text[:75] + '...') if len(stem_text) > 75 else stem_text
-                st.markdown(
-                    f"""
-                    <div style="background:#fff;border:1px solid #d7e0ea;border-radius:0.6rem;padding:0.8rem;margin-bottom:0.5rem;font-size:0.85rem;">
-                      <b>{idx}. [{html.escape(str(c_name))}]</b> 오답 횟수: <span style="color:#e63946;font-weight:700;">{w_cnt}회</span> (총 풀이: {t_sol}회)<br>
-                      <span style="color:#132238;font-weight:600;display:inline-block;margin-top:0.3rem;">"{html.escape(stem_preview)}"</span>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
+        # 수험생들이 가장 많이 틀린 구체적인 문항 분석 (과목별 필터 및 클릭 시 상세 보기)
+        st.markdown('<p style="font-weight:700;font-size:1.05rem;color:#e63946;">⚠️ 과목별 최다 오답 문항 분석 및 상세 보기</p>', unsafe_allow_html=True)
+        
+        all_worsts = stats.get("all_worst_questions", [])
+        if all_worsts:
+            # 과목 목록 추출
+            available_cats = sorted(list(set(q["categoryName"] for q in all_worsts)))
+            selected_cat_filter = st.selectbox("과목(종류)별 선택", options=["전체보기"] + available_cats, key="worst_q_cat_filter")
+            
+            filtered_worsts = all_worsts if selected_cat_filter == "전체보기" else [q for q in all_worsts if q["categoryName"] == selected_cat_filter]
+            
+            if filtered_worsts:
+                for idx, wq in enumerate(filtered_worsts[:15], 1):
+                    stem_text = strip_difficulty_marker(wq["stem"] or '')
+                    stem_preview = (stem_text[:70] + '...') if len(stem_text) > 70 else stem_text
+                    
+                    with st.expander(f"[{wq['categoryName']}] 오답 {wq['wrong_count']}회 (총 풀이 {wq['total_solved']}회) - {stem_preview}"):
+                        st.markdown(f"**[전체 지문]**\n\n{wq['stem']}")
+                        
+                        img = image_path_for(wq.get("imagePath"))
+                        if img:
+                            st.image(str(img), use_container_width=True)
+                            
+                        choices = parse_choices(wq["choicesJson"])
+                        for ci, ctext in enumerate(choices):
+                            if ci == int(wq["answerIndex"]):
+                                st.markdown(f"<div style='background:rgba(46,196,182,0.15);padding:0.4rem;border-radius:0.4rem;margin-bottom:0.2rem;'><b>{ci+1}. {html.escape(ctext)} (정답)</b></div>", unsafe_allow_html=True)
+                            else:
+                                st.markdown(f"<div style='padding:0.4rem;margin-bottom:0.2rem;'>{ci+1}. {html.escape(ctext)}</div>", unsafe_allow_html=True)
+                                
+                        if wq.get("explanation"):
+                            st.markdown(f"<div style='background:#f4f7fb;padding:0.6rem;border-radius:0.5rem;margin-top:0.5rem;'><p style='font-weight:700;margin:0 0 0.2rem;color:#0b2a4a;'>해설</p>{html.escape(wq['explanation'])}</div>", unsafe_allow_html=True)
+                        if wq.get("source"):
+                            st.caption(f"출처: {wq['source']}")
+            else:
+                st.markdown('<p style="font-size:0.85rem;color:#5b6b7c;">선택한 과목에 해당하는 오답 기록이 없습니다.</p>', unsafe_allow_html=True)
         else:
             st.markdown('<p style="font-size:0.85rem;color:#5b6b7c;">아직 집계된 오답 문제 데이터가 없습니다.</p>', unsafe_allow_html=True)
-            
-        st.markdown("<div style='height:1rem;'></div>", unsafe_allow_html=True)
-        st.markdown('<p style="font-weight:700;font-size:1.05rem;color:#0b2a4a;">👥 다른 사용자들의 최근 시험 응시 내역</p>', unsafe_allow_html=True)
-        if stats.get("recent_all_users"):
-            for row in stats["recent_all_users"]:
-                r_name = row["name"] if isinstance(row, dict) else row[0]
-                r_email = row["email"] if isinstance(row, dict) else row[1]
-                r_kind = row["kind"] if isinstance(row, dict) else row[2]
-                r_score = row["score"] if isinstance(row, dict) else row[3]
-                r_total = row["totalCount"] if isinstance(row, dict) else row[4]
-                st.markdown(
-                    f"""
-                    <div style="background:#f4f7fb;border:1px solid #d7e0ea;border-radius:0.5rem;padding:0.6rem;margin-bottom:0.3rem;font-size:0.8rem;display:flex;justify-content:space-between;align-items:center;">
-                      <div><b>{html.escape(str(r_name))}</b> ({html.escape(str(r_email))})<br><span style="color:#5b6b7c;">유형: {r_kind}</span></div>
-                      <div style="text-align:right;font-weight:700;color:#0b2a4a;">{r_score}/{r_total}점</div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-        else:
-            st.markdown('<p style="font-size:0.85rem;color:#5b6b7c;">다른 사용자의 응시 내역이 없습니다.</p>', unsafe_allow_html=True)
 
 
 def view_topics():
