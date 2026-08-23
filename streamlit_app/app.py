@@ -700,32 +700,44 @@ def view_mail_setup():
     auth_layout("메일 설정 안내", "이메일 발송 설정이 필요할 때 참고하세요.", body)
 
 
-# ---------- [100% 안전한 파이썬 순회 기반 마스터 통계 집계 함수] ----------
+# ---------- [모의고사 vs 주제별 완벽 분리 및 안전한 순회 집계 함수] ----------
 def get_master_statistics():
     from lib.db import fetch_all
     try:
         submitted_attempts = fetch_all("SELECT * FROM Attempt WHERE status = 'submitted'")
         total_attempts = len(submitted_attempts)
         
-        category_data = {} 
-        question_data = {} 
+        mock_attempts_count = 0
+        topic_attempts_count = 0
+        
+        category_data_mock = {}
+        category_data_topic = {}
+        question_data = {}
         
         for att in submitted_attempts:
             att_id = att["id"] if isinstance(att, dict) else att["id"]
             user_id = att["userId"] if isinstance(att, dict) else att["userId"]
+            kind = att["kind"] if isinstance(att, dict) else att["kind"]
+            
+            if kind == "mock":
+                mock_attempts_count += 1
+            else:
+                topic_attempts_count += 1
+                
             try:
                 _, questions = load_exam(att_id, user_id)
                 for q in questions:
                     cat_name = q.get("categoryName") or "기타"
                     is_correct = q.get("isCorrect")
                     
-                    if cat_name not in category_data:
-                        category_data[cat_name] = {"total": 0, "wrong": 0}
+                    cat_target = category_data_mock if kind == "mock" else category_data_topic
+                    if cat_name not in cat_target:
+                        cat_target[cat_name] = {"total": 0, "wrong": 0}
                     
                     if is_correct is not None:
-                        category_data[cat_name]["total"] += 1
+                        cat_target[cat_name]["total"] += 1
                         if not is_correct:
-                            category_data[cat_name]["wrong"] += 1
+                            cat_target[cat_name]["wrong"] += 1
                             
                     q_id = q.get("id")
                     if q_id:
@@ -748,14 +760,19 @@ def get_master_statistics():
             except Exception:
                 pass
                 
-        category_stats = []
-        for cat_name in sorted(category_data.keys()):
-            category_stats.append({
-                "categoryName": cat_name,
-                "total_solved": category_data[cat_name]["total"],
-                "wrong_count": category_data[cat_name]["wrong"]
-            })
+        def make_cat_stats(c_dict):
+            res = []
+            for name in sorted(c_dict.keys()):
+                res.append({
+                    "categoryName": name,
+                    "total_solved": c_dict[name]["total"],
+                    "wrong_count": c_dict[name]["wrong"]
+                })
+            return res
             
+        mock_category_stats = make_cat_stats(category_data_mock)
+        topic_category_stats = make_cat_stats(category_data_topic)
+        
         all_worst_questions = sorted(
             [q for q in question_data.values() if q["wrong_count"] > 0],
             key=lambda x: x["wrong_count"],
@@ -764,13 +781,19 @@ def get_master_statistics():
         
         return {
             "total_attempts": total_attempts,
-            "category_stats": category_stats,
+            "mock_attempts_count": mock_attempts_count,
+            "topic_attempts_count": topic_attempts_count,
+            "mock_category_stats": mock_category_stats,
+            "topic_category_stats": topic_category_stats,
             "all_worst_questions": all_worst_questions
         }
     except Exception as e:
         return {
             "total_attempts": 0,
-            "category_stats": [],
+            "mock_attempts_count": 0,
+            "topic_attempts_count": 0,
+            "mock_category_stats": [],
+            "topic_category_stats": [],
             "all_worst_questions": [],
             "error": str(e)
         }
@@ -1684,7 +1707,7 @@ def view_dashboard():
 
 
 # =====================================================================
-# [마스터 전용 통계 분석 새 페이지 뷰]
+# [마스터 전용 통계 분석 새 페이지 뷰 (모의고사 / 주제별 분리 보기)]
 # =====================================================================
 def view_master_stats():
     user = require_user()
@@ -1715,36 +1738,60 @@ def view_master_stats():
             
         st.markdown("<div style='height:0.5rem;'></div>", unsafe_allow_html=True)
         
-        # 누적 완료 시험 건수 카드
-        st.markdown(f'<div style="background:#fff;border:1px solid #d7e0ea;border-radius:0.6rem;padding:1rem;text-align:center;"><p style="font-size:0.85rem;color:#5b6b7c;margin:0;">누적 완료 시험</p><p style="font-size:1.5rem;font-weight:800;color:#132238;margin:0.2rem 0 0;">{stats.get("total_attempts", 0)}건</p></div>', unsafe_allow_html=True)
+        # 상단 완료 시험 건수 구분 카드 (모의고사 vs 주제별)
+        c_m, c_t = st.columns(2, gap="small")
+        with c_m:
+            st.markdown(f'<div style="background:#fff;border:1px solid #d7e0ea;border-radius:0.6rem;padding:0.9rem;text-align:center;"><p style="font-size:0.8rem;color:#5b6b7c;margin:0;">실전 모의고사 완료</p><p style="font-size:1.3rem;font-weight:800;color:#0b2a4a;margin:0.2rem 0 0;">{stats.get("mock_attempts_count", 0)}건</p></div>', unsafe_allow_html=True)
+        with c_t:
+            st.markdown(f'<div style="background:#fff;border:1px solid #d7e0ea;border-radius:0.6rem;padding:0.9rem;text-align:center;"><p style="font-size:0.8rem;color:#5b6b7c;margin:0;">주제별 문제풀이 완료</p><p style="font-size:1.3rem;font-weight:800;color:#0b2a4a;margin:0.2rem 0 0;">{stats.get("topic_attempts_count", 0)}건</p></div>', unsafe_allow_html=True)
         
         st.markdown("<div style='height:1rem;'></div>", unsafe_allow_html=True)
         
-        # 14개 과목 전체 통계
-        st.markdown('<p style="font-weight:700;font-size:1.05rem;color:#0b2a4a;">📚 14개 과목(주제)별 전체 풀이 및 오답 현황</p>', unsafe_allow_html=True)
-        cat_stats = stats.get("category_stats", [])
-        if cat_stats:
-            for cat in cat_stats:
-                solved = cat["total_solved"]
-                wrong = cat["wrong_count"]
-                cat_name = cat["categoryName"]
-                wrong_pct = round((wrong / solved * 100), 1) if solved > 0 else 0
-                st.markdown(
-                    f"""
-                    <div style="background:#fff;border:1px solid #d7e0ea;border-radius:0.6rem;padding:0.7rem 1rem;margin-bottom:0.4rem;display:flex;justify-content:space-between;align-items:center;font-size:0.85rem;">
-                      <div><b>{html.escape(str(cat_name))}</b><br><span style="color:#5b6b7c;font-size:0.75rem;">총 풀이: {solved}회 · 오답: {wrong}회</span></div>
-                      <div style="text-align:right;font-weight:700;color:#e63946;">오답률 {wrong_pct}%</div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-        else:
-            st.markdown('<p style="font-size:0.85rem;color:#5b6b7c;">아직 집계된 과목별 데이터가 없습니다. (시험을 완료해 주세요)</p>', unsafe_allow_html=True)
+        # 과목별 현황을 탭으로 보기 좋게 구분
+        tab_mock, tab_topic = st.tabs(["📝 실전 모의고사 과목별 현황", "📚 주제별 문제풀이 과목별 현황"])
+        
+        with tab_mock:
+            mock_stats = stats.get("mock_category_stats", [])
+            if mock_stats:
+                for cat in mock_stats:
+                    solved = cat["total_solved"]
+                    wrong = cat["wrong_count"]
+                    wrong_pct = round((wrong / solved * 100), 1) if solved > 0 else 0
+                    st.markdown(
+                        f"""
+                        <div style="background:#fff;border:1px solid #d7e0ea;border-radius:0.6rem;padding:0.7rem 1rem;margin-bottom:0.4rem;display:flex;justify-content:space-between;align-items:center;font-size:0.85rem;">
+                          <div><b>{html.escape(str(cat['categoryName']))}</b><br><span style="color:#5b6b7c;font-size:0.75rem;">총 풀이: {solved}회 · 오답: {wrong}회</span></div>
+                          <div style="text-align:right;font-weight:700;color:#e63946;">오답률 {wrong_pct}%</div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+            else:
+                st.markdown('<p style="font-size:0.85rem;color:#5b6b7c;padding:0.5rem 0;">완료된 실전 모의고사 데이터가 없습니다.</p>', unsafe_allow_html=True)
+                
+        with tab_topic:
+            topic_stats = stats.get("topic_category_stats", [])
+            if topic_stats:
+                for cat in topic_stats:
+                    solved = cat["total_solved"]
+                    wrong = cat["wrong_count"]
+                    wrong_pct = round((wrong / solved * 100), 1) if solved > 0 else 0
+                    st.markdown(
+                        f"""
+                        <div style="background:#fff;border:1px solid #d7e0ea;border-radius:0.6rem;padding:0.7rem 1rem;margin-bottom:0.4rem;display:flex;justify-content:space-between;align-items:center;font-size:0.85rem;">
+                          <div><b>{html.escape(str(cat['categoryName']))}</b><br><span style="color:#5b6b7c;font-size:0.75rem;">총 풀이: {solved}회 · 오답: {wrong}회</span></div>
+                          <div style="text-align:right;font-weight:700;color:#e63946;">오답률 {wrong_pct}%</div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+            else:
+                st.markdown('<p style="font-size:0.85rem;color:#5b6b7c;padding:0.5rem 0;">완료된 주제별 문제풀이 데이터가 없습니다.</p>', unsafe_allow_html=True)
 
         st.markdown("<div style='height:1rem;'></div>", unsafe_allow_html=True)
 
-        # 수험생들이 가장 많이 틀린 구체적인 문항 분석 (과목별 선택 및 오답 많은 순 정렬)
-        st.markdown('<p style="font-weight:700;font-size:1.05rem;color:#e63946;">⚠️ 과목별 최다 오답 문항 분석 및 상세 보기 (오답 많은 순)</p>', unsafe_allow_html=True)
+        # 수험생들이 가장 많이 틀린 구체적인 문항 분석 (오답 횟수 많은 순 정렬 및 과목별 선택)
+        st.markdown('<p style="font-weight:700;font-size:1.05rem;color:#e63946;">⚠️ 과목별 최다 오답 문항 분석 및 상세 보기 (오답 많은 순 정렬)</p>', unsafe_allow_html=True)
         
         all_worsts = stats.get("all_worst_questions", [])
         if all_worsts:
