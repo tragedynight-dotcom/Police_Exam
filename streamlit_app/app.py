@@ -700,7 +700,7 @@ def view_mail_setup():
     auth_layout("메일 설정 안내", "이메일 발송 설정이 필요할 때 참고하세요.", body)
 
 
-# ---------- [다중 제출 이력을 완벽하게 추적하여 누적 카운트하는 최종 통계 함수] ----------
+# ---------- [문제 지문(stem) 기준 완벽 누적 카운팅 통계 집계 함수] ----------
 def get_master_statistics():
     from lib.db import fetch_all
     try:
@@ -725,7 +725,6 @@ def get_master_statistics():
                 topic_attempts_count += 1
                 
             try:
-                # 제출된 모든 Attempt 건을 순회하며 개별 문항의 실제 오답 판정 결과를 추출
                 _, questions = load_exam(att_id, user_id)
                 for q in questions:
                     cat_name = q.get("categoryName") or "기타"
@@ -740,10 +739,11 @@ def get_master_statistics():
                         if not is_correct:
                             cat_target[cat_name]["wrong"] += 1
                             
-                    q_id = q.get("id")
-                    if q_id:
-                        if q_id not in question_data:
-                            question_data[q_id] = {
+                    # ★ 핵심 수정: 고유 ID 대신 문제 지문(stem)을 키로 사용하여 동일한 질문을 반복 풀었을 때 횟수가 누적되도록 함
+                    stem_text = q.get("stem", "").strip()
+                    if stem_text:
+                        if stem_text not in question_data:
+                            question_data[stem_text] = {
                                 "categoryName": cat_name,
                                 "stem": q.get("stem", ""),
                                 "choicesJson": q.get("choicesJson", "[]"),
@@ -754,11 +754,10 @@ def get_master_statistics():
                                 "total_solved": 0,
                                 "wrong_count": 0
                             }
-                        # 모든 제출 회차에서 해당 문제가 등장할 때마다 누적 카운팅
                         if is_correct is not None:
-                            question_data[q_id]["total_solved"] += 1
+                            question_data[stem_text]["total_solved"] += 1
                             if not is_correct:
-                                question_data[q_id]["wrong_count"] += 1
+                                question_data[stem_text]["wrong_count"] += 1
             except Exception:
                 pass
                 
@@ -1710,7 +1709,7 @@ def view_dashboard():
 
 
 # =====================================================================
-# [마스터 전용 통계 분석 새 페이지 뷰 (다중 제출 누적 완벽 반영)]
+# [마스터 전용 통계 분석 새 페이지 뷰 (지문 기준 누적 반영)]
 # =====================================================================
 def view_master_stats():
     user = require_user()
@@ -1793,7 +1792,7 @@ def view_master_stats():
 
         st.markdown("<div style='height:1rem;'></div>", unsafe_allow_html=True)
 
-        # 수험생들이 가장 많이 틀린 구체적인 문항 분석 (과목별 선택 전에는 숨기고, 선택 시 오답 많은 순 내림차순 정렬 노출)
+        # 수험생들이 가장 많이 틀린 구체적인 문항 분석 (지문 기준 누적 카운트 반영)
         st.markdown('<p style="font-weight:700;font-size:1.05rem;color:#e63946;">⚠️ 과목별 최다 오답 문항 분석 및 상세 보기 (오답 많은 순 정렬)</p>', unsafe_allow_html=True)
         
         all_worsts = stats.get("all_worst_questions", [])
@@ -1810,7 +1809,7 @@ def view_master_stats():
                         stem_text = strip_difficulty_marker(wq["stem"] or '')
                         stem_preview = (stem_text[:70] + '...') if len(stem_text) > 70 else stem_text
                         
-                        # [누적 카운트 반영] 각 문제별 총 틀린 횟수와 총 풀이 횟수가 정확히 표시됨
+                        # [지문 키 기반 누적 횟수 정상 반영]
                         with st.expander(f"[{wq['categoryName']}] 오답 {wq['wrong_count']}회 (총 풀이 {wq['total_solved']}회) - {stem_preview}"):
                             st.markdown(f"**[전체 지문]**\n\n{wq['stem']}")
                             
