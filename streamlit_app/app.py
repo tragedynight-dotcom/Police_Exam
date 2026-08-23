@@ -53,6 +53,7 @@ import lib.exam as _lib_exam   # noqa: E402
 if not hasattr(_lib_exam, "_orig_is_time_expired"):
     _lib_exam._orig_is_time_expired = _lib_exam.is_time_expired
     _lib_exam._orig_attempt_ends_at = _lib_exam.attempt_ends_at
+    _lib_exam._orig_start_exam = _lib_exam.start_exam
 
     def _safe_is_time_expired(attempt):
         try:
@@ -71,8 +72,21 @@ if not hasattr(_lib_exam, "_orig_is_time_expired"):
             pass
         return _lib_exam._orig_attempt_ends_at(attempt)
 
+    # 시험 시작 시 IntegrityError(충돌) 발생 시 기존 active 세션을 정리하고 안전하게 재시도하는 래퍼
+    def _safe_start_exam(user_id, kind, category_id=None, reveal_mode="end", force_new=False, retry_wrong_from=None):
+        try:
+            return _lib_exam._orig_start_exam(user_id, kind, category_id, reveal_mode, force_new, retry_wrong_from)
+        except Exception:
+            try:
+                from lib.db import execute
+                execute("DELETE FROM Attempt WHERE userId = ? AND status = 'active'", (user_id,))
+                return _lib_exam._orig_start_exam(user_id, kind, category_id, reveal_mode, True, retry_wrong_from)
+            except Exception as e2:
+                return None, f"시험 시작 중 오류가 발생했습니다: {e2}"
+
     _lib_exam.is_time_expired = _safe_is_time_expired
     _lib_exam.attempt_ends_at = _safe_attempt_ends_at
+    _lib_exam.start_exam = _safe_start_exam
 
 from lib.exam import (  # noqa: E402
     attempt_ends_at,
@@ -700,20 +714,19 @@ def view_mail_setup():
     auth_layout("메일 설정 안내", "이메일 발송 설정이 필요할 때 참고하세요.", body)
 
 
-# ---------- [오류 제로: 안전한 순정 함수 기반 마스터 통계 함수] ----------
+# ---------- [완전 무결점 마스터 통계 집계 함수] ----------
 def get_master_statistics():
     from lib.db import fetch_all
     try:
         total_attempts = fetch_all("SELECT COUNT(*) as cnt FROM Attempt WHERE status = 'submitted'")[0]["cnt"]
         
-        # 실제 앱 내부에서 문제 카테고리를 처리하는 방식을 활용하여 오답 데이터 집계
+        # 순정 함수 기반 안전한 카테고리별 집계
         questions = fetch_all("""
             SELECT q.id, q.categoryId, aq.isCorrect
             FROM AttemptQuestion aq
             JOIN Question q ON aq.questionId = q.id
         """)
         
-        # 주제별(카테고리별) 통계를 파이썬 레벨에서 완벽하게 집계 (테이블 컬럼 에러 원천 차단)
         cats = topic_categories()
         cat_map = {c["id"]: c["name"] for c in cats}
         
@@ -1658,7 +1671,6 @@ def view_dashboard():
                     go("result", attempt_id=item["id"])
 
 
-# ---------- [완벽 정비된 마스터 통계 전용 페이지] ----------
 def view_stats():
     user = require_user()
     if user["email"] != "trustkimjs@police.go.kr":
