@@ -700,63 +700,35 @@ def view_mail_setup():
     auth_layout("메일 설정 안내", "이메일 발송 설정이 필요할 때 참고하세요.", body)
 
 
-# ---------- [다중 제출 시 오답 및 풀이 횟수가 정확히 누적되는 마스터 통계 집계 함수] ----------
+# ---------- [데이터베이스 직접 조인 기반 진짜 오답 누적 통계 집계 함수] ----------
 def get_master_statistics():
     from lib.db import fetch_all
     try:
         submitted_attempts = fetch_all("SELECT * FROM Attempt WHERE status = 'submitted'")
         total_attempts = len(submitted_attempts)
         
-        mock_attempts_count = 0
-        topic_attempts_count = 0
+        mock_attempts_count = sum(1 for a in submitted_attempts if (a["kind"] if isinstance(a, dict) else a[2]) == "mock")
+        topic_attempts_count = total_attempts - mock_attempts_count
         
         category_data_mock = {}
         category_data_topic = {}
-        question_data = {} 
         
         for att in submitted_attempts:
             att_id = att["id"] if isinstance(att, dict) else att["id"]
             user_id = att["userId"] if isinstance(att, dict) else att["userId"]
             kind = att["kind"] if isinstance(att, dict) else att["kind"]
-            
-            if kind == "mock":
-                mock_attempts_count += 1
-            else:
-                topic_attempts_count += 1
-                
             try:
                 _, questions = load_exam(att_id, user_id)
                 for q in questions:
                     cat_name = q.get("categoryName") or "기타"
                     is_correct = q.get("isCorrect")
-                    
                     cat_target = category_data_mock if kind == "mock" else category_data_topic
                     if cat_name not in cat_target:
                         cat_target[cat_name] = {"total": 0, "wrong": 0}
-                    
                     if is_correct is not None:
                         cat_target[cat_name]["total"] += 1
                         if not is_correct:
                             cat_target[cat_name]["wrong"] += 1
-                            
-                    q_id = q.get("id")
-                    if q_id:
-                        if q_id not in question_data:
-                            question_data[q_id] = {
-                                "categoryName": cat_name,
-                                "stem": q.get("stem", ""),
-                                "choicesJson": q.get("choicesJson", "[]"),
-                                "answerIndex": q.get("answerIndex", 0),
-                                "explanation": q.get("explanation", ""),
-                                "source": q.get("source", ""),
-                                "imagePath": q.get("imagePath", ""),
-                                "total_solved": 0,
-                                "wrong_count": 0
-                            }
-                        if is_correct is not None:
-                            question_data[q_id]["total_solved"] += 1
-                            if not is_correct:
-                                question_data[q_id]["wrong_count"] += 1
             except Exception:
                 pass
                 
@@ -773,12 +745,33 @@ def get_master_statistics():
         mock_category_stats = make_cat_stats(category_data_mock)
         topic_category_stats = make_cat_stats(category_data_topic)
         
-        all_worst_questions = sorted(
-            [q for q in question_data.values() if q["wrong_count"] > 0],
-            key=lambda x: x["wrong_count"],
-            reverse=True
-        )
+        # 데이터베이스의 AttemptQuestion과 Question 테이블을 직접 조인하여 모든 제출 기록의 오답 횟수를 정확히 누적 카운트
+        raw_worst = fetch_all("""
+            SELECT q.id as q_id, q.categoryName, q.stem, q.choicesJson, q.answerIndex, q.explanation, q.source, q.imagePath,
+                   COUNT(aq.id) as total_solved,
+                   SUM(CASE WHEN aq.isCorrect = 0 THEN 1 ELSE 0 END) as wrong_count
+            FROM AttemptQuestion aq
+            JOIN Question q ON aq.questionId = q.id
+            GROUP BY q.id
+            HAVING wrong_count > 0
+            ORDER BY wrong_count DESC
+        """)
         
+        all_worst_questions = []
+        for row in raw_worst:
+            all_worst_questions.append({
+                "id": row["q_id"] if isinstance(row, dict) else row[0],
+                "categoryName": row["categoryName"] if isinstance(row, dict) else row[1],
+                "stem": row["stem"] if isinstance(row, dict) else row[2],
+                "choicesJson": row["choicesJson"] if isinstance(row, dict) else row[3],
+                "answerIndex": row["answerIndex"] if isinstance(row, dict) else row[4],
+                "explanation": row["explanation"] if isinstance(row, dict) else row[5],
+                "source": row["source"] if isinstance(row, dict) else row[6],
+                "imagePath": row["imagePath"] if isinstance(row, dict) else row[7],
+                "total_solved": row["total_solved"] if isinstance(row, dict) else row[8],
+                "wrong_count": row["wrong_count"] if isinstance(row, dict) else row[9]
+            })
+            
         return {
             "total_attempts": total_attempts,
             "mock_attempts_count": mock_attempts_count,
@@ -1790,7 +1783,7 @@ def view_master_stats():
 
         st.markdown("<div style='height:1rem;'></div>", unsafe_allow_html=True)
 
-        # 수험생들이 가장 많이 틀린 구체적인 문항 분석 (과목별 선택 전에는 숨기고, 선택 시 오답 많은 순 내림차순 정렬 노출)
+        # 수험생들이 가장 많이 틀린 구체적인 문항 분석 (DB 직접 조인 쿼리 기반 누적 횟수 및 오답 많은 순 정렬)
         st.markdown('<p style="font-weight:700;font-size:1.05rem;color:#e63946;">⚠️ 과목별 최다 오답 문항 분석 및 상세 보기 (오답 많은 순 정렬)</p>', unsafe_allow_html=True)
         
         all_worsts = stats.get("all_worst_questions", [])
