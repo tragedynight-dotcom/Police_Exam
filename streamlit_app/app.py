@@ -691,49 +691,13 @@ def view_mail_setup():
             Streamlit Cloud **Secrets** 또는 환경변수에 메일 설정을 넣어 주세요.
 
             - `EMAILJS_SERVICE_ID`, `EMAILJS_TEMPLATE_ID`, `EMAILJS_PUBLIC_KEY`, `EMAILJS_PRIVATE_KEY`
-            - または `MAIL_USER`, `MAIL_PASS` (필요 시 `MAIL_HOST`, `MAIL_PORT`)
+            - 또는 `MAIL_USER`, `MAIL_PASS` (필요 시 `MAIL_HOST`, `MAIL_PORT`)
             """
         )
         if st.button("로그인으로", type="secondary"):
             go("login")
 
     auth_layout("메일 설정 안내", "이메일 발송 설정이 필요할 때 참고하세요.", body)
-
-
-# ---------- [완벽 수정된 컬럼 대응형 마스터 통계 함수] ----------
-def get_master_statistics():
-    from lib.db import fetch_all
-    try:
-        total_attempts = fetch_all("SELECT COUNT(*) as cnt FROM Attempt WHERE status = 'submitted'")[0]["cnt"]
-        
-        # 실제 데이터베이스 스키마에 맞는 테이블명과 컬럼 구조로 정밀 매칭
-        category_stats = fetch_all("""
-            SELECT COALESCE(c.name, q.category_id, '기타') as categoryName,
-                   COUNT(aq.id) as total_solved,
-                   SUM(CASE WHEN aq.isCorrect = 0 THEN 1 ELSE 0 END) as wrong_count
-            FROM AttemptQuestion aq
-            LEFT JOIN Question q ON aq.questionId = q.id
-            LEFT JOIN Category c ON q.category_id = c.id
-            GROUP BY categoryName
-            ORDER BY categoryName ASC
-        """)
-        
-        recent_all_users = fetch_all("""
-            SELECT u.name, u.email, a.kind, a.score, a.totalCount, a.submittedAt
-            FROM Attempt a
-            JOIN User u ON a.userId = u.id
-            WHERE a.status = 'submitted'
-            ORDER BY a.submittedAt DESC
-            LIMIT 10
-        """)
-        
-        return {
-            "total_attempts": total_attempts,
-            "category_stats": category_stats,
-            "recent_all_users": recent_all_users
-        }
-    except Exception as e:
-        return {"error": str(e)}
 
 
 # ---------- App views ----------
@@ -1532,10 +1496,6 @@ def view_dashboard():
     with greet_r:
         if st.button("로그아웃", type="secondary", key="dash_logout"):
             logout()
-            
-    if user["email"] == "trustkimjs@police.go.kr":
-        if st.button("👑 마스터 관리자 전용 통계 분석 보기", type="primary", use_container_width=True, key="dash_to_stats"):
-            go("stats")
 
     active = get_active_attempt(user["id"])
     if active:
@@ -1640,78 +1600,6 @@ def view_dashboard():
             with r3:
                 if st.button("결과", key=f"recent_{item['id']}", use_container_width=True):
                     go("result", attempt_id=item["id"])
-
-
-# ---------- [오류 완벽 해결된 통계 전용 페이지] ----------
-def view_stats():
-    user = require_user()
-    if user["email"] != "trustkimjs@police.go.kr":
-        go("dashboard")
-        return
-        
-    app_shell_css()
-    
-    st.markdown(
-        """
-        <p class="damoa-brand">지역 경찰 실무 역량 평가 다통과</p>
-        <p class="damoa-title">👑 마스터 관리자 전용 통계 분석</p>
-        """,
-        unsafe_allow_html=True,
-    )
-    
-    if st.button("← 홈으로 돌아가기", type="secondary", use_container_width=True, key="stats_home"):
-        go("dashboard")
-        
-    stats = get_master_statistics()
-    if not stats:
-        st.error("통계 데이터를 불러오지 못했습니다.")
-        return
-        
-    if "error" in stats:
-        st.error(f"데이터 조회 에러: {stats['error']}")
-        return
-
-    st.markdown(f'<div style="background:#f4f7fb;border:1px solid #d7e0ea;border-radius:0.6rem;padding:0.9rem;text-align:center;margin:1rem 0;"><p style="font-size:0.85rem;color:#5b6b7c;margin:0;">누적 완료 시험</p><p style="font-size:1.4rem;font-weight:800;color:#0b2a4a;margin:0;">{stats["total_attempts"]}건</p></div>', unsafe_allow_html=True)
-    
-    st.markdown("<div style='height:0.5rem;'></div>", unsafe_allow_html=True)
-    st.markdown('<p style="font-weight:700;font-size:1rem;color:#0b2a4a;">📚 14개 과목(주제)별 전체 풀이 및 오답 현황</p>', unsafe_allow_html=True)
-    
-    cat_list = stats.get("category_stats", [])
-    if cat_list:
-        for cat in cat_list:
-            cat_name = cat.get('categoryName') or "기타 과목"
-            solved = cat.get('total_solved', 0) or 0
-            wrong = cat.get('wrong_count', 0) or 0
-            wrong_pct = round((wrong / solved * 100), 1) if solved > 0 else 0
-            st.markdown(
-                f"""
-                <div style="background:#fff;border:1px solid #d7e0ea;border-radius:0.6rem;padding:0.7rem 1rem;margin-bottom:0.4rem;display:flex;justify-content:space-between;align-items:center;font-size:0.85rem;">
-                  <div><b>{html.escape(str(cat_name))}</b><br><span style="color:#5b6b7c;font-size:0.75rem;">총 풀이: {solved}회 · 오답: {wrong}회</span></div>
-                  <div style="text-align:right;font-weight:700;color:#e63946;">오답률 {wrong_pct}%</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-    else:
-        st.info("아직 집계된 과목별 풀이 데이터가 없습니다.")
-        
-    st.markdown("<div style='height:1rem;'></div>", unsafe_allow_html=True)
-    st.markdown('<p style="font-weight:700;font-size:1rem;color:#0b2a4a;">👥 다른 사용자들의 최근 시험 응시 내역</p>', unsafe_allow_html=True)
-    
-    recent_list = stats.get("recent_all_users", [])
-    if recent_list:
-        for row in recent_list:
-            st.markdown(
-                f"""
-                <div style="background:#f4f7fb;border:1px solid #d7e0ea;border-radius:0.5rem;padding:0.6rem;margin-bottom:0.3rem;font-size:0.8rem;display:flex;justify-content:space-between;align-items:center;">
-                  <div><b>{html.escape(str(row['name']))}</b> ({html.escape(str(row['email']))})<br><span style="color:#5b6b7c;">유형: {row['kind']}</span></div>
-                  <div style="text-align:right;font-weight:700;color:#0b2a4a;">{row['score']}/{row['totalCount']}점</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-    else:
-        st.info("다른 사용자의 응시 내역이 없습니다.")
 
 
 def view_topics():
@@ -2032,20 +1920,15 @@ def view_result():
     user = require_user()
     app_shell_css()
     attempt_id = st.session_state.attempt_id
-    
-    try:
-        att_check, _ = load_exam(attempt_id, user["id"])
-        if att_check and att_check["status"] != "submitted":
-            submit_exam(attempt_id, user["id"])
-    except Exception:
-        pass
-
     attempt, questions = load_exam(attempt_id, user["id"])
     if not attempt:
         st.error("결과를 찾을 수 없습니다.")
         if st.button("홈으로"):
             go("dashboard")
         return
+
+    if attempt["status"] != "submitted":
+        go("exam", attempt_id=attempt_id)
 
     if st.session_state.get("_result_filter_attempt") != attempt_id:
         st.session_state._result_filter_attempt = attempt_id
@@ -2271,7 +2154,6 @@ def main():
         "topics": view_topics,
         "exam": view_exam,
         "result": view_result,
-        "stats": view_stats,
     }
     routes.get(view, view_login)()
         
