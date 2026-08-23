@@ -700,13 +700,14 @@ def view_mail_setup():
     auth_layout("메일 설정 안내", "이메일 발송 설정이 필요할 때 참고하세요.", body)
 
 
-# ---------- 마스터 통계 집계 함수 (14개 과목 전체 통계 포함) ----------
+# ---------- 안전한 마스터 통계 집계 함수 (오류 방어 구조) ----------
 def get_master_statistics():
     from lib.db import fetch_all
     try:
         total_users = fetch_all("SELECT COUNT(*) as cnt FROM User")[0]["cnt"]
         total_attempts = fetch_all("SELECT COUNT(*) as cnt FROM Attempt WHERE status = 'submitted'")[0]["cnt"]
         
+        # 14개 과목별 전체 풀이 및 오답 집계 (안전한 표준 SQL)
         category_stats = fetch_all("""
             SELECT q.categoryName, 
                    COUNT(aq.id) as total_solved,
@@ -732,7 +733,7 @@ def get_master_statistics():
             "category_stats": category_stats,
             "recent_all_users": recent_all_users
         }
-    except Exception:
+    except Exception as e:
         return None
 
 
@@ -1637,10 +1638,10 @@ def view_dashboard():
                     go("result", attempt_id=item["id"])
 
     # =====================================================================
-    # [마스터 전용 통계 분석 섹션] (버튼 없이 바로 펼쳐져서 출력)
+    # [마스터 전용 통계 분석 섹션] (클릭 불필요, 하단에 바로 쫙 펼쳐져서 출력)
     # =====================================================================
     if user["email"] == "trustkimjs@police.go.kr":
-        st.markdown("<hr style='margin: 2rem 0; border: 1px dashed #c9a227;'>", unsafe_allow_html=True)
+        st.markdown("<hr style='margin: 2rem 0; border: 1px solid #c9a227;'>", unsafe_allow_html=True)
         st.markdown('<p style="font-size:1.2rem;font-weight:800;color:#0b2a4a;">👑 마스터 관리자 전용 통계 분석</p>', unsafe_allow_html=True)
         
         stats = get_master_statistics()
