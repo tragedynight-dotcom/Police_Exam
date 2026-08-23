@@ -700,7 +700,7 @@ def view_mail_setup():
     auth_layout("메일 설정 안내", "이메일 발송 설정이 필요할 때 참고하세요.", body)
 
 
-# ---------- [완벽한 오답 누적 집계 함수 (중복 제출 시 횟수 누적 반영)] ----------
+# ---------- [중복 풀이 시에도 오답 카운트가 정확히 누적되는 완벽 집계 함수] ----------
 def get_master_statistics():
     from lib.db import fetch_all
     try:
@@ -725,6 +725,7 @@ def get_master_statistics():
                 topic_attempts_count += 1
                 
             try:
+                # load_exam을 통해 해당 시험의 모든 문항과 사용자의 정오답 상태를 가져옴
                 _, questions = load_exam(att_id, user_id)
                 for q in questions:
                     cat_name = q.get("categoryName") or "기타"
@@ -741,7 +742,6 @@ def get_master_statistics():
                             
                     q_id = q.get("id")
                     if q_id:
-                        # 고유 문제별로 누적 집계 (풀릴 때마다 total_solved 증가, 틀릴 때마다 wrong_count 증가)
                         if q_id not in question_data:
                             question_data[q_id] = {
                                 "categoryName": cat_name,
@@ -754,6 +754,7 @@ def get_master_statistics():
                                 "total_solved": 0,
                                 "wrong_count": 0
                             }
+                        # 각 제출 회차마다 풀이 및 오답 횟수를 누적 합산
                         if is_correct is not None:
                             question_data[q_id]["total_solved"] += 1
                             if not is_correct:
@@ -1708,7 +1709,7 @@ def view_dashboard():
 
 
 # =====================================================================
-# [마스터 전용 통계 분석 새 페이지 뷰 (과목별 선택 시에만 최다 오답 표시)]
+# [마스터 전용 통계 분석 새 페이지 뷰]
 # =====================================================================
 def view_master_stats():
     user = require_user()
@@ -1791,17 +1792,17 @@ def view_master_stats():
 
         st.markdown("<div style='height:1rem;'></div>", unsafe_allow_html=True)
 
-        # 수험생들이 가장 많이 틀린 구체적인 문항 분석 (과목별 선택 전에는 노출하지 않고, 선택 시에만 오답 많은 순 정렬 노출)
+        # 수험생들이 가장 많이 틀린 구체적인 문항 분석 (과목별 선택 전에는 숨기고, 선택 시 오답 많은 순 내림차순 정렬 노출)
         st.markdown('<p style="font-weight:700;font-size:1.05rem;color:#e63946;">⚠️ 과목별 최다 오답 문항 분석 및 상세 보기 (오답 많은 순 정렬)</p>', unsafe_allow_html=True)
         
         all_worsts = stats.get("all_worst_questions", [])
         if all_worsts:
             available_cats = sorted(list(set(q["categoryName"] for q in all_worsts)))
-            # 기본 선택값을 안내 문구로 설정하여 처음에는 아무것도 안 나오게 처리
             selected_cat_filter = st.selectbox("과목(종류)을 선택하세요", options=["-- 과목을 선택해 주세요 --"] + available_cats, key="worst_q_cat_filter")
             
             if selected_cat_filter != "-- 과목을 선택해 주세요 --":
                 filtered_worsts = [q for q in all_worsts if q["categoryName"] == selected_cat_filter]
+                # 오답 횟수 많은 순으로 명시적 내림차순 정렬
                 filtered_worsts = sorted(filtered_worsts, key=lambda x: x["wrong_count"], reverse=True)
                 
                 if filtered_worsts:
