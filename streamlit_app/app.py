@@ -700,7 +700,7 @@ def view_mail_setup():
     auth_layout("메일 설정 안내", "이메일 발송 설정이 필요할 때 참고하세요.", body)
 
 
-# ---------- [다중 제출 시 모든 시험 이력을 누적하여 카운트하는 완벽 통계 함수] ----------
+# ---------- [다중 제출 이력을 완벽하게 추적하여 누적 카운트하는 최종 통계 함수] ----------
 def get_master_statistics():
     from lib.db import fetch_all
     try:
@@ -725,7 +725,7 @@ def get_master_statistics():
                 topic_attempts_count += 1
                 
             try:
-                # 제출된 모든 Attempt 건을 순회하며 정오답 데이터를 딕셔너리에 누적 합산
+                # 제출된 모든 Attempt 건을 순회하며 개별 문항의 실제 오답 판정 결과를 추출
                 _, questions = load_exam(att_id, user_id)
                 for q in questions:
                     cat_name = q.get("categoryName") or "기타"
@@ -754,7 +754,7 @@ def get_master_statistics():
                                 "total_solved": 0,
                                 "wrong_count": 0
                             }
-                        # 반복 응시할 때마다 해당 문제의 풀이 횟수와 오답 횟수가 누적되도록 명시적 합산
+                        # 모든 제출 회차에서 해당 문제가 등장할 때마다 누적 카운팅
                         if is_correct is not None:
                             question_data[q_id]["total_solved"] += 1
                             if not is_correct:
@@ -775,7 +775,7 @@ def get_master_statistics():
         mock_category_stats = make_cat_stats(category_data_mock)
         topic_category_stats = make_cat_stats(category_data_topic)
         
-        # 오답 횟수 많은 순(내림차순)으로 정확히 정렬
+        # 오답 횟수가 많은 순서대로 명시적 내림차순 정렬
         all_worst_questions = sorted(
             [q for q in question_data.values() if q["wrong_count"] > 0],
             key=lambda x: x["wrong_count"],
@@ -1509,7 +1509,7 @@ def app_shell_css():
                 }, true);
             }
 
-            // 하단 3버튼 가로 1줄 고정 강제 적용
+            # 하단 3버튼 가로 1줄 고정 강제 적용
             setInterval(function() {
                 var marks = doc.querySelectorAll('.exam-nav-side-mark, .result-actions-mark');
                 marks.forEach(function(mark) {
