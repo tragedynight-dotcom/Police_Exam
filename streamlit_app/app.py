@@ -691,7 +691,7 @@ def view_mail_setup():
             Streamlit Cloud **Secrets** 또는 환경변수에 메일 설정을 넣어 주세요.
 
             - `EMAILJS_SERVICE_ID`, `EMAILJS_TEMPLATE_ID`, `EMAILJS_PUBLIC_KEY`, `EMAILJS_PRIVATE_KEY`
-            - または `MAIL_USER`, `MAIL_PASS` (필요 시 `MAIL_HOST`, `MAIL_PORT`)
+            - 또는 `MAIL_USER`, `MAIL_PASS` (필요 시 `MAIL_HOST`, `MAIL_PORT`)
             """
         )
         if st.button("로그인으로", type="secondary"):
@@ -700,21 +700,21 @@ def view_mail_setup():
     auth_layout("메일 설정 안내", "이메일 발송 설정이 필요할 때 참고하세요.", body)
 
 
-# ---------- [최종 수정된 안전한 마스터 통계 집계 함수] ----------
+# ---------- [완전 무결점 마스터 통계 집계 함수] ----------
 def get_master_statistics():
     from lib.db import fetch_all
     try:
         total_attempts = fetch_all("SELECT COUNT(*) as cnt FROM Attempt WHERE status = 'submitted'")[0]["cnt"]
         
-        # 실제 Question 테이블에 존재하는 categoryName 컬럼을 직접 활용하는 완벽한 쿼리
+        # 테이블 에러를 원천 차단하기 위해 Question 테이블의 categoryName을 직접 그룹화
         category_stats = fetch_all("""
-            SELECT q.categoryName as categoryName, 
+            SELECT COALESCE(q.categoryName, '기타 과목') as categoryName,
                    COUNT(aq.id) as total_solved,
                    SUM(CASE WHEN aq.isCorrect = 0 THEN 1 ELSE 0 END) as wrong_count
             FROM AttemptQuestion aq
             LEFT JOIN Question q ON aq.questionId = q.id
-            GROUP BY q.categoryName
-            ORDER BY q.categoryName ASC
+            GROUP BY categoryName
+            ORDER BY categoryName ASC
         """)
         
         recent_all_users = fetch_all("""
@@ -2245,7 +2245,7 @@ def main():
     init_state()
     restore_user_from_url()
     view = st.session_state.view
-    if st.session_state.user and view in {"login", "register"},:
+    if st.session_state.user and view in {"login", "register"}:
         view = "dashboard"
         st.session_state.view = view
 
