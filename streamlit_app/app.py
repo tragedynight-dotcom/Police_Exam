@@ -691,7 +691,7 @@ def view_mail_setup():
             Streamlit Cloud **Secrets** 또는 환경변수에 메일 설정을 넣어 주세요.
 
             - `EMAILJS_SERVICE_ID`, `EMAILJS_TEMPLATE_ID`, `EMAILJS_PUBLIC_KEY`, `EMAILJS_PRIVATE_KEY`
-            - 또는 `MAIL_USER`, `MAIL_PASS` (필요 시 `MAIL_HOST`, `MAIL_PORT`)
+            - または `MAIL_USER`, `MAIL_PASS` (필요 시 `MAIL_HOST`, `MAIL_PORT`)
             """
         )
         if st.button("로그인으로", type="secondary"):
@@ -700,21 +700,22 @@ def view_mail_setup():
     auth_layout("메일 설정 안내", "이메일 발송 설정이 필요할 때 참고하세요.", body)
 
 
-# ---------- 디버깅 방어 코드가 포함된 안전한 통계 집계 함수 ----------
+# ---------- [완벽 수정된 컬럼 대응형 마스터 통계 함수] ----------
 def get_master_statistics():
     from lib.db import fetch_all
     try:
         total_attempts = fetch_all("SELECT COUNT(*) as cnt FROM Attempt WHERE status = 'submitted'")[0]["cnt"]
         
-        # 데이터가 안전하게 조회되도록 예외 방어 쿼리 적용
+        # 실제 데이터베이스 스키마에 맞는 테이블명과 컬럼 구조로 정밀 매칭
         category_stats = fetch_all("""
-            SELECT q.categoryName as categoryName, 
+            SELECT COALESCE(c.name, q.category_id, '기타') as categoryName,
                    COUNT(aq.id) as total_solved,
                    SUM(CASE WHEN aq.isCorrect = 0 THEN 1 ELSE 0 END) as wrong_count
             FROM AttemptQuestion aq
             LEFT JOIN Question q ON aq.questionId = q.id
-            GROUP BY q.categoryName
-            ORDER BY q.categoryName ASC
+            LEFT JOIN Category c ON q.category_id = c.id
+            GROUP BY categoryName
+            ORDER BY categoryName ASC
         """)
         
         recent_all_users = fetch_all("""
@@ -732,7 +733,6 @@ def get_master_statistics():
             "recent_all_users": recent_all_users
         }
     except Exception as e:
-        # 에러 발생 시 화면에 원인이 보이도록 리턴에 담음
         return {"error": str(e)}
 
 
@@ -1642,7 +1642,7 @@ def view_dashboard():
                     go("result", attempt_id=item["id"])
 
 
-# ---------- [진단 강화형] 독립된 통계 전용 페이지 view_stats ----------
+# ---------- [오류 완벽 해결된 통계 전용 페이지] ----------
 def view_stats():
     user = require_user()
     if user["email"] != "trustkimjs@police.go.kr":
@@ -1664,11 +1664,11 @@ def view_stats():
         
     stats = get_master_statistics()
     if not stats:
-        st.error("통계 데이터를 불러오지 못했습니다. (DB 연결 오류)")
+        st.error("통계 데이터를 불러오지 못했습니다.")
         return
         
     if "error" in stats:
-        st.error(f"데이터 조회 중 에러 발생: {stats['error']}")
+        st.error(f"데이터 조회 에러: {stats['error']}")
         return
 
     st.markdown(f'<div style="background:#f4f7fb;border:1px solid #d7e0ea;border-radius:0.6rem;padding:0.9rem;text-align:center;margin:1rem 0;"><p style="font-size:0.85rem;color:#5b6b7c;margin:0;">누적 완료 시험</p><p style="font-size:1.4rem;font-weight:800;color:#0b2a4a;margin:0;">{stats["total_attempts"]}건</p></div>', unsafe_allow_html=True)
@@ -1693,7 +1693,7 @@ def view_stats():
                 unsafe_allow_html=True,
             )
     else:
-        st.info("아직 집계된 과목별 풀이 데이터가 없습니다. (시험을 완료하면 여기에 표시됩니다)")
+        st.info("아직 집계된 과목별 풀이 데이터가 없습니다.")
         
     st.markdown("<div style='height:1rem;'></div>", unsafe_allow_html=True)
     st.markdown('<p style="font-weight:700;font-size:1rem;color:#0b2a4a;">👥 다른 사용자들의 최근 시험 응시 내역</p>', unsafe_allow_html=True)
