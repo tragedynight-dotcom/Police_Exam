@@ -700,53 +700,49 @@ def view_mail_setup():
     auth_layout("메일 설정 안내", "이메일 발송 설정이 필요할 때 참고하세요.", body)
 
 
-# ---------- [100% 안전한 파이썬 기반 통계 집계 함수 (오답 빈도수 내림차순 정렬 포함)] ----------
+# ---------- [DB 직접 조인 기반 100% 실시간 누적 오답 통계 집계 함수] ----------
 def get_master_statistics():
     from lib.db import fetch_all
     try:
         submitted_attempts = fetch_all("SELECT * FROM Attempt WHERE status = 'submitted'")
         total_attempts = len(submitted_attempts)
         
-        category_data = {} 
-        question_data = {} 
+        # 데이터베이스의 AttemptQuestion과 Question 테이블을 직접 조인하여 모든 풀이 기록과 오답을 정확히 누적 집계
+        raw_stats = fetch_all("""
+            SELECT q.id as q_id, q.categoryName, q.stem, q.choicesJson, q.answerIndex, q.explanation, q.source, q.imagePath,
+                   COUNT(aq.id) as total_solved,
+                   SUM(CASE WHEN aq.isCorrect = 0 THEN 1 ELSE 0 END) as wrong_count
+            FROM AttemptQuestion aq
+            JOIN Question q ON aq.questionId = q.id
+            GROUP BY q.id
+        """)
         
-        for att in submitted_attempts:
-            att_id = att["id"] if isinstance(att, dict) else att["id"]
-            user_id = att["userId"] if isinstance(att, dict) else att["userId"]
-            try:
-                _, questions = load_exam(att_id, user_id)
-                for q in questions:
-                    cat_name = q.get("categoryName") or "기타"
-                    is_correct = q.get("isCorrect")
-                    
-                    if cat_name not in category_data:
-                        category_data[cat_name] = {"total": 0, "wrong": 0}
-                    
-                    if is_correct is not None:
-                        category_data[cat_name]["total"] += 1
-                        if not is_correct:
-                            category_data[cat_name]["wrong"] += 1
-                            
-                    q_id = q.get("id")
-                    if q_id:
-                        if q_id not in question_data:
-                            question_data[q_id] = {
-                                "categoryName": cat_name,
-                                "stem": q.get("stem", ""),
-                                "choicesJson": q.get("choicesJson", "[]"),
-                                "answerIndex": q.get("answerIndex", 0),
-                                "explanation": q.get("explanation", ""),
-                                "source": q.get("source", ""),
-                                "imagePath": q.get("imagePath", ""),
-                                "total_solved": 0,
-                                "wrong_count": 0
-                            }
-                        if is_correct is not None:
-                            question_data[q_id]["total_solved"] += 1
-                            if not is_correct:
-                                question_data[q_id]["wrong_count"] += 1
-            except Exception:
-                pass
+        category_data = {}
+        all_worst_questions = []
+        
+        for row in raw_stats:
+            cat_name = row["categoryName"] or "기타"
+            total_sol = row["total_solved"] or 0
+            wrong_cnt = row["wrong_count"] or 0
+            
+            if cat_name not in category_data:
+                category_data[cat_name] = {"total": 0, "wrong": 0}
+            category_data[cat_name]["total"] += total_sol
+            category_data[cat_name]["wrong"] += wrong_cnt
+            
+            if wrong_cnt > 0:
+                all_worst_questions.append({
+                    "id": row["q_id"],
+                    "categoryName": cat_name,
+                    "stem": row["stem"],
+                    "choicesJson": row["choicesJson"],
+                    "answerIndex": row["answerIndex"],
+                    "explanation": row["explanation"],
+                    "source": row["source"],
+                    "imagePath": row["imagePath"],
+                    "total_solved": total_sol,
+                    "wrong_count": wrong_cnt
+                })
                 
         category_stats = []
         for cat_name in sorted(category_data.keys()):
@@ -756,12 +752,8 @@ def get_master_statistics():
                 "wrong_count": category_data[cat_name]["wrong"]
             })
             
-        # 오답 횟수 많은 순(내림차순)으로 완벽하게 정렬
-        all_worst_questions = sorted(
-            [q for q in question_data.values() if q["wrong_count"] > 0],
-            key=lambda x: x["wrong_count"],
-            reverse=True
-        )
+        # 가장 많이 틀린 순서대로(내림차순) 확실하게 정렬
+        all_worst_questions = sorted(all_worst_questions, key=lambda x: x["wrong_count"], reverse=True)
         
         return {
             "total_attempts": total_attempts,
@@ -1685,7 +1677,7 @@ def view_dashboard():
 
 
 # =====================================================================
-# [마스터 전용 통계 분석 새 페이지 뷰] (오답 빈도수 기준 내림차순 정렬 및 카테고리 필터 적용)
+# [마스터 전용 통계 분석 새 페이지 뷰]
 # =====================================================================
 def view_master_stats():
     user = require_user()
@@ -1744,7 +1736,7 @@ def view_master_stats():
 
         st.markdown("<div style='height:1rem;'></div>", unsafe_allow_html=True)
 
-        # 수험생들이 가장 많이 틀린 구체적인 문항 분석 (오답 빈도수 내림차순 정렬 및 과목별 선택 기능)
+        # 수험생들이 가장 많이 틀린 구체적인 문항 분석 (과목별 선택 및 오답 많은 순 정렬)
         st.markdown('<p style="font-weight:700;font-size:1.05rem;color:#e63946;">⚠️ 과목별 최다 오답 문항 분석 및 상세 보기 (오답 많은 순)</p>', unsafe_allow_html=True)
         
         all_worsts = stats.get("all_worst_questions", [])
@@ -1753,7 +1745,6 @@ def view_master_stats():
             selected_cat_filter = st.selectbox("과목(종류)별 선택", options=["전체보기"] + available_cats, key="worst_q_cat_filter")
             
             filtered_worsts = all_worsts if selected_cat_filter == "전체보기" else [q for q in all_worsts if q["categoryName"] == selected_cat_filter]
-            # 오답 횟수가 많은 순으로 한 번 더 확실하게 정렬 보장
             filtered_worsts = sorted(filtered_worsts, key=lambda x: x["wrong_count"], reverse=True)
             
             if filtered_worsts:
