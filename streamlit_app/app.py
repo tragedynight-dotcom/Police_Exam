@@ -1275,7 +1275,7 @@ def app_shell_css():
             white-space: nowrap !important;
           }
           
-          /* 네비게이션 3등분 강제 1줄 고정 CSS 및 결과 페이지 버튼 상호작용 완전 보장 */
+          /* 네비게이션 3등분 강제 1줄 고정 CSS 및 결과 페이지 버튼 클릭 완벽 보장 */
           div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark),
           div[data-testid='stHorizontalBlock']:has(.result-actions-mark) {
             display: flex !important;
@@ -2006,15 +2006,21 @@ def view_result():
     user = require_user()
     app_shell_css()
     attempt_id = st.session_state.attempt_id
+    
+    # [안전 장치] 결과 화면 진입 시 제출 상태가 아니면 강제로 제출 확정 처리
+    try:
+        att_check, _ = load_exam(attempt_id, user["id"])
+        if att_check and att_check["status"] != "submitted":
+            submit_exam(attempt_id, user["id"])
+    except Exception:
+        pass
+
     attempt, questions = load_exam(attempt_id, user["id"])
     if not attempt:
         st.error("결과를 찾을 수 없습니다.")
         if st.button("홈으로"):
             go("dashboard")
         return
-
-    if attempt["status"] != "submitted":
-        go("exam", attempt_id=attempt_id)
 
     if st.session_state.get("_result_filter_attempt") != attempt_id:
         st.session_state._result_filter_attempt = attempt_id
