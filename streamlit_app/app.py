@@ -700,23 +700,18 @@ def view_mail_setup():
     auth_layout("메일 설정 안내", "이메일 발송 설정이 필요할 때 참고하세요.", body)
 
 
-# ---------- 안전한 마스터 통계 집계 함수 (오류 방어 및 컬럼명 검증 포함) ----------
+# ---------- 마스터 통계 집계 함수 (sqlite3.Row 에러 방어 적용) ----------
 def get_master_statistics():
     from lib.db import fetch_all
     try:
-        total_users = 0
         total_attempts = 0
         try:
-            total_users = fetch_all("SELECT COUNT(*) as cnt FROM User")[0]["cnt"]
-        except Exception:
-            pass
-
-        try:
-            total_attempts = fetch_all("SELECT COUNT(*) as cnt FROM Attempt WHERE status = 'submitted'")[0]["cnt"]
+            res_att = fetch_all("SELECT COUNT(*) as cnt FROM Attempt WHERE status = 'submitted'")
+            if res_att:
+                total_attempts = res_att[0]["cnt"]
         except Exception:
             pass
         
-        # 14개 과목별 통계 (안전한 조인 및 집계)
         category_stats = []
         try:
             category_stats = fetch_all("""
@@ -729,17 +724,8 @@ def get_master_statistics():
                 ORDER BY q.categoryName ASC
             """)
         except Exception:
-            try:
-                # 테이블 구조나 컬럼명이 다를 경우를 대비한 대체 쿼리
-                category_stats = fetch_all("""
-                    SELECT categoryName, COUNT(*) as total_solved, 0 as wrong_count
-                    FROM Question
-                    GROUP BY categoryName
-                """)
-            except Exception:
-                pass
+            pass
         
-        # 디테일 오답 문항 분석 (TOP 10)
         detailed_worst_questions = []
         try:
             detailed_worst_questions = fetch_all("""
@@ -756,7 +742,6 @@ def get_master_statistics():
         except Exception:
             pass
         
-        # 최근 응시 내역
         recent_all_users = []
         try:
             recent_all_users = fetch_all("""
@@ -771,7 +756,6 @@ def get_master_statistics():
             pass
         
         return {
-            "total_users": total_users,
             "total_attempts": total_attempts,
             "category_stats": category_stats,
             "detailed_worst_questions": detailed_worst_questions,
@@ -779,7 +763,6 @@ def get_master_statistics():
         }
     except Exception as e:
         return {
-            "total_users": 0,
             "total_attempts": 0,
             "category_stats": [],
             "detailed_worst_questions": [],
@@ -1696,7 +1679,7 @@ def view_dashboard():
 
 
 # =====================================================================
-# [마스터 전용 통계 분석 새 페이지 뷰] (방어 로직 및 에러 디버깅 포함)
+# [마스터 전용 통계 분석 새 페이지 뷰] (총 가입 회원 삭제 및 Row 객체 대응 완료)
 # =====================================================================
 def view_master_stats():
     user = require_user()
@@ -1722,16 +1705,13 @@ def view_master_stats():
         
     stats = get_master_statistics()
     if stats:
-        # 에러 발생 시 화면에 안내 메시지 표시
         if stats.get("error"):
             st.error(f"통계 조회 중 오류 발생: {stats['error']}")
             
         st.markdown("<div style='height:0.5rem;'></div>", unsafe_allow_html=True)
-        col1, col2 = st.columns(2, gap="small")
-        with col1:
-            st.markdown(f'<div style="background:#fff;border:1px solid #d7e0ea;border-radius:0.6rem;padding:0.8rem;text-align:center;"><p style="font-size:0.8rem;color:#5b6b7c;margin:0;">총 가입 회원</p><p style="font-size:1.2rem;font-weight:800;color:#132238;margin:0;">{stats.get("total_users", 0)}명</p></div>', unsafe_allow_html=True)
-        with col2:
-            st.markdown(f'<div style="background:#fff;border:1px solid #d7e0ea;border-radius:0.6rem;padding:0.8rem;text-align:center;"><p style="font-size:0.8rem;color:#5b6b7c;margin:0;">누적 완료 시험</p><p style="font-size:1.2rem;font-weight:800;color:#132238;margin:0;">{stats.get("total_attempts", 0)}건</p></div>', unsafe_allow_html=True)
+        
+        # 누적 완료 시험 카드만 단독으로 중앙/전체 폭에 맞게 표시
+        st.markdown(f'<div style="background:#fff;border:1px solid #d7e0ea;border-radius:0.6rem;padding:1rem;text-align:center;"><p style="font-size:0.85rem;color:#5b6b7c;margin:0;">누적 완료 시험</p><p style="font-size:1.5rem;font-weight:800;color:#132238;margin:0.2rem 0 0;">{stats.get("total_attempts", 0)}건</p></div>', unsafe_allow_html=True)
         
         st.markdown("<div style='height:1rem;'></div>", unsafe_allow_html=True)
         
@@ -1739,10 +1719,10 @@ def view_master_stats():
         st.markdown('<p style="font-weight:700;font-size:1.05rem;color:#0b2a4a;">📚 14개 과목(주제)별 전체 풀이 및 오답 현황</p>', unsafe_allow_html=True)
         if stats.get("category_stats"):
             for cat in stats["category_stats"]:
-                solved = cat.get('total_solved', 0) or 0
-                wrong = cat.get('wrong_count', 0) or 0
+                solved = cat["total_solved"] if isinstance(cat, dict) else cat[1]
+                wrong = cat["wrong_count"] if isinstance(cat, dict) else cat[2]
+                cat_name = cat["categoryName"] if isinstance(cat, dict) else cat[0]
                 wrong_pct = round((wrong / solved * 100), 1) if solved > 0 else 0
-                cat_name = cat.get('categoryName') or cat.get('category_name') or '기타 과목'
                 st.markdown(
                     f"""
                     <div style="background:#fff;border:1px solid #d7e0ea;border-radius:0.6rem;padding:0.7rem 1rem;margin-bottom:0.4rem;display:flex;justify-content:space-between;align-items:center;font-size:0.85rem;">
@@ -1761,15 +1741,17 @@ def view_master_stats():
         st.markdown('<p style="font-weight:700;font-size:1.05rem;color:#e63946;">⚠️ 수험생들이 가장 많이 틀린 구체적인 문항 분석 (TOP 10)</p>', unsafe_allow_html=True)
         if stats.get("detailed_worst_questions"):
             for idx, wq in enumerate(stats["detailed_worst_questions"], 1):
-                stem_text = strip_difficulty_marker(wq.get('stem', '') or '')
+                c_name = wq["categoryName"] if isinstance(wq, dict) else wq[0]
+                c_stem = wq["stem"] if isinstance(wq, dict) else wq[1]
+                w_cnt = wq["wrong_count"] if isinstance(wq, dict) else wq[3]
+                t_sol = wq["total_solved"] if isinstance(wq, dict) else wq[4]
+                
+                stem_text = strip_difficulty_marker(c_stem or '')
                 stem_preview = (stem_text[:75] + '...') if len(stem_text) > 75 else stem_text
-                cat_name = wq.get('categoryName', '과목명 없음')
-                wrong_cnt = wq.get('wrong_count', 0)
-                total_sol = wq.get('total_solved', 0)
                 st.markdown(
                     f"""
                     <div style="background:#fff;border:1px solid #d7e0ea;border-radius:0.6rem;padding:0.8rem;margin-bottom:0.5rem;font-size:0.85rem;">
-                      <b>{idx}. [{html.escape(str(cat_name))}]</b> 오답 횟수: <span style="color:#e63946;font-weight:700;">{wrong_cnt}회</span> (총 풀이: {total_sol}회)<br>
+                      <b>{idx}. [{html.escape(str(c_name))}]</b> 오답 횟수: <span style="color:#e63946;font-weight:700;">{w_cnt}회</span> (총 풀이: {t_sol}회)<br>
                       <span style="color:#132238;font-weight:600;display:inline-block;margin-top:0.3rem;">"{html.escape(stem_preview)}"</span>
                     </div>
                     """,
@@ -1782,11 +1764,11 @@ def view_master_stats():
         st.markdown('<p style="font-weight:700;font-size:1.05rem;color:#0b2a4a;">👥 다른 사용자들의 최근 시험 응시 내역</p>', unsafe_allow_html=True)
         if stats.get("recent_all_users"):
             for row in stats["recent_all_users"]:
-                r_name = row.get('name', '사용자')
-                r_email = row.get('email', '')
-                r_kind = row.get('kind', '')
-                r_score = row.get('score', 0)
-                r_total = row.get('totalCount', 0)
+                r_name = row["name"] if isinstance(row, dict) else row[0]
+                r_email = row["email"] if isinstance(row, dict) else row[1]
+                r_kind = row["kind"] if isinstance(row, dict) else row[2]
+                r_score = row["score"] if isinstance(row, dict) else row[3]
+                r_total = row["totalCount"] if isinstance(row, dict) else row[4]
                 st.markdown(
                     f"""
                     <div style="background:#f4f7fb;border:1px solid #d7e0ea;border-radius:0.5rem;padding:0.6rem;margin-bottom:0.3rem;font-size:0.8rem;display:flex;justify-content:space-between;align-items:center;">
