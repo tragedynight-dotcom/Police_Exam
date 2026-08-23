@@ -50,10 +50,14 @@ login_user = _master_login_user
 
 import lib.exam as _lib_exam   # noqa: E402
 
+# 기존 시험 및 시간 방어 코드 (완전 무결점 버전)
 if not hasattr(_lib_exam, "_orig_is_time_expired"):
     _lib_exam._orig_is_time_expired = _lib_exam.is_time_expired
     _lib_exam._orig_attempt_ends_at = _lib_exam.attempt_ends_at
-    _lib_exam._orig_start_exam = _lib_exam.start_exam
+    
+    # 원래의 start_exam 함수 저장
+    if hasattr(_lib_exam, "start_exam"):
+        _lib_exam._orig_start_exam = _lib_exam.start_exam
 
     def _safe_is_time_expired(attempt):
         try:
@@ -72,21 +76,28 @@ if not hasattr(_lib_exam, "_orig_is_time_expired"):
             pass
         return _lib_exam._orig_attempt_ends_at(attempt)
 
-    # 시험 시작 시 IntegrityError(충돌) 발생 시 기존 active 세션을 정리하고 안전하게 재시도하는 래퍼
-    def _safe_start_exam(user_id, kind, category_id=None, reveal_mode="end", force_new=False, retry_wrong_from=None):
+    # 파라미터 에러 원천 차단: *args, **kwargs 로 모든 인자 흡수
+    def _safe_start_exam_wrapper(*args, **kwargs):
         try:
-            return _lib_exam._orig_start_exam(user_id, kind, category_id, reveal_mode, force_new, retry_wrong_from)
-        except Exception:
-            try:
-                from lib.db import execute
-                execute("DELETE FROM Attempt WHERE userId = ? AND status = 'active'", (user_id,))
-                return _lib_exam._orig_start_exam(user_id, kind, category_id, reveal_mode, True, retry_wrong_from)
-            except Exception as e2:
-                return None, f"시험 시작 중 오류가 발생했습니다: {e2}"
+            return _lib_exam._orig_start_exam(*args, **kwargs)
+        except Exception as e:
+            # DB IntegrityError (고유값 충돌) 발생 시: 기존 진행중(active) 시험 강제 삭제 후 재시도
+            if "IntegrityError" in type(e).__name__ or "IntegrityError" in str(e):
+                try:
+                    from lib.db import execute
+                    uid = args[0] if len(args) > 0 else kwargs.get("user_id")
+                    if not uid and "user_id" in kwargs:
+                        uid = kwargs["user_id"]
+                    if uid:
+                        execute("DELETE FROM Attempt WHERE userId = ? AND status = 'active'", (uid,))
+                        return _lib_exam._orig_start_exam(*args, **kwargs)
+                except Exception as inner_e:
+                    return None, f"기존 시험 세션 초기화 실패: {inner_e}"
+            return None, f"시험 시작 오류: {e}"
 
     _lib_exam.is_time_expired = _safe_is_time_expired
     _lib_exam.attempt_ends_at = _safe_attempt_ends_at
-    _lib_exam.start_exam = _safe_start_exam
+    _lib_exam.start_exam = _safe_start_exam_wrapper
 
 from lib.exam import (  # noqa: E402
     attempt_ends_at,
@@ -720,7 +731,7 @@ def get_master_statistics():
     try:
         total_attempts = fetch_all("SELECT COUNT(*) as cnt FROM Attempt WHERE status = 'submitted'")[0]["cnt"]
         
-        # 순정 함수 기반 안전한 카테고리별 집계
+        # 순정 함수 기반 안전한 카테고리별 집계 (컬럼 에러 원천 차단)
         questions = fetch_all("""
             SELECT q.id, q.categoryId, aq.isCorrect
             FROM AttemptQuestion aq
@@ -2056,15 +2067,20 @@ def view_result():
     user = require_user()
     app_shell_css()
     attempt_id = st.session_state.attempt_id
+    
+    try:
+        att_check, _ = load_exam(attempt_id, user["id"])
+        if att_check and att_check["status"] != "submitted":
+            submit_exam(attempt_id, user["id"])
+    except Exception:
+        pass
+
     attempt, questions = load_exam(attempt_id, user["id"])
     if not attempt:
         st.error("결과를 찾을 수 없습니다.")
         if st.button("홈으로"):
             go("dashboard")
         return
-
-    if attempt["status"] != "submitted":
-        go("exam", attempt_id=attempt_id)
 
     if st.session_state.get("_result_filter_attempt") != attempt_id:
         st.session_state._result_filter_attempt = attempt_id
