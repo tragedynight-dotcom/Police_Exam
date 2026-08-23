@@ -725,13 +725,13 @@ def view_mail_setup():
     auth_layout("메일 설정 안내", "이메일 발송 설정이 필요할 때 참고하세요.", body)
 
 
-# ---------- [완전 무결점 마스터 통계 집계 함수] ----------
+# ---------- [오류 완벽 제거: sqlite3.Row 속성 에러 방어] ----------
 def get_master_statistics():
     from lib.db import fetch_all
     try:
         total_attempts = fetch_all("SELECT COUNT(*) as cnt FROM Attempt WHERE status = 'submitted'")[0]["cnt"]
         
-        # 순정 함수 기반 안전한 카테고리별 집계 (컬럼 에러 원천 차단)
+        # 순정 함수 기반 안전한 카테고리별 집계
         questions = fetch_all("""
             SELECT q.id, q.categoryId, aq.isCorrect
             FROM AttemptQuestion aq
@@ -746,11 +746,16 @@ def get_master_statistics():
             stats_dict[c["name"]] = {"total_solved": 0, "wrong_count": 0}
             
         for q in questions:
-            c_name = cat_map.get(q.get("categoryId"), "기타 과목")
+            # sqlite3.Row는 .get() 메서드가 없으므로 배열처럼 접근합니다.
+            cat_id = q["categoryId"]
+            is_correct = q["isCorrect"]
+            
+            c_name = cat_map.get(cat_id, "기타 과목")
+            
             if c_name not in stats_dict:
                 stats_dict[c_name] = {"total_solved": 0, "wrong_count": 0}
             stats_dict[c_name]["total_solved"] += 1
-            if q.get("isCorrect") == 0:
+            if is_correct == 0:
                 stats_dict[c_name]["wrong_count"] += 1
                 
         category_stats = [
