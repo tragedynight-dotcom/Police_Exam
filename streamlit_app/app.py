@@ -1456,7 +1456,7 @@ def app_shell_css():
                 }, true);
             }
 
-            // 하단 3버튼 가로 1줄 고정 강제 적용 (오리지널 코드 유지)
+            # 하단 3버튼 가로 1줄 고정 강제 적용 (오리지널 코드 유지)
             setInterval(function() {
                 var marks = doc.querySelectorAll('.exam-nav-side-mark, .result-actions-mark');
                 marks.forEach(function(mark) {
@@ -1657,7 +1657,7 @@ def view_dashboard():
 
 
 # =====================================================================
-# [마스터 전용 통계 분석 새 페이지 뷰]
+# [마스터 전용 통계 분석 새 페이지 뷰] (14개 과목 전체 통계 + 구체적 오답 문항 TOP 10)
 # =====================================================================
 def view_master_stats():
     user = require_user()
@@ -2300,7 +2300,7 @@ def main():
         "topics": view_topics,
         "exam": view_exam,
         "result": view_result,
-        "master_stats": view_master_stats,  # 새 페이지 뷰 라우팅 연결
+        "master_stats": view_master_stats,  # 마스터 전용 통계 페이지 라우팅
     }
     routes.get(view, view_login)()
         
