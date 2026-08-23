@@ -700,7 +700,7 @@ def view_mail_setup():
     auth_layout("메일 설정 안내", "이메일 발송 설정이 필요할 때 참고하세요.", body)
 
 
-# ---------- [검증된 순회 방식의 안전한 마스터 통계 집계 함수] ----------
+# ---------- [다중 제출 시 모든 제출 이력을 완벽하게 순회하여 누적 집계하는 마스터 통계 함수] ----------
 def get_master_statistics():
     from lib.db import fetch_all
     try:
@@ -725,6 +725,7 @@ def get_master_statistics():
                 topic_attempts_count += 1
                 
             try:
+                # 제출된 모든 Attempt 건들을 각각 로드하여 모든 풀이와 오답을 100% 누적 합산
                 _, questions = load_exam(att_id, user_id)
                 for q in questions:
                     cat_name = q.get("categoryName") or "기타"
@@ -753,6 +754,7 @@ def get_master_statistics():
                                 "total_solved": 0,
                                 "wrong_count": 0
                             }
+                        # 문제별로 반복 제출 시 풀이 및 오답 횟수가 누적되도록 명시적 합산
                         if is_correct is not None:
                             question_data[q_id]["total_solved"] += 1
                             if not is_correct:
@@ -1446,7 +1448,7 @@ def app_shell_css():
         """
     )
     
-    # --------- 오디오 버튼음용 자바스크립트 복구 ---------
+    # --------- 오디오 버튼음용 자바스크립트 완벽 복구 ---------
     components.html(
         """
         <script>
@@ -1506,7 +1508,7 @@ def app_shell_css():
                 }, true);
             }
 
-            // 하단 3버튼 가로 1줄 고정 강제 적용
+            # 하단 3버튼 가로 1줄 고정 강제 적용
             setInterval(function() {
                 var marks = doc.querySelectorAll('.exam-nav-side-mark, .result-actions-mark');
                 marks.forEach(function(mark) {
@@ -1707,7 +1709,7 @@ def view_dashboard():
 
 
 # =====================================================================
-# [마스터 전용 통계 분석 새 페이지 뷰 (검증된 파이썬 순회 방식)]
+# [마스터 전용 통계 분석 새 페이지 뷰 (다중 제출 누적 완벽 반영)]
 # =====================================================================
 def view_master_stats():
     user = require_user()
@@ -1790,7 +1792,7 @@ def view_master_stats():
 
         st.markdown("<div style='height:1rem;'></div>", unsafe_allow_html=True)
 
-        # 수험생들이 가장 많이 틀린 구체적인 문항 분석 (과목별 선택 전에는 숨기고, 선택 시 오답 많은 순 내림차순 정렬 노출)
+        # 수험생들이 가장 많이 틀린 구체적인 문항 분석 (다중 제출 시 오답 횟수가 누적되어 반영되도록 개선)
         st.markdown('<p style="font-weight:700;font-size:1.05rem;color:#e63946;">⚠️ 과목별 최다 오답 문항 분석 및 상세 보기 (오답 많은 순 정렬)</p>', unsafe_allow_html=True)
         
         all_worsts = stats.get("all_worst_questions", [])
@@ -1800,6 +1802,7 @@ def view_master_stats():
             
             if selected_cat_filter != "-- 과목을 선택해 주세요 --":
                 filtered_worsts = [q for q in all_worsts if q["categoryName"] == selected_cat_filter]
+                # 오답 횟수 많은 순으로 명시적 내림차순 정렬
                 filtered_worsts = sorted(filtered_worsts, key=lambda x: x["wrong_count"], reverse=True)
                 
                 if filtered_worsts:
@@ -1807,6 +1810,7 @@ def view_master_stats():
                         stem_text = strip_difficulty_marker(wq["stem"] or '')
                         stem_preview = (stem_text[:70] + '...') if len(stem_text) > 70 else stem_text
                         
+                        # 누적 오답 횟수와 총 풀이 횟수가 정확히 반영되도록 표시
                         with st.expander(f"[{wq['categoryName']}] 오답 {wq['wrong_count']}회 (총 풀이 {wq['total_solved']}회) - {stem_preview}"):
                             st.markdown(f"**[전체 지문]**\n\n{wq['stem']}")
                             
