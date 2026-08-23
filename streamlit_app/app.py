@@ -691,7 +691,7 @@ def view_mail_setup():
             Streamlit Cloud **Secrets** 또는 환경변수에 메일 설정을 넣어 주세요.
 
             - `EMAILJS_SERVICE_ID`, `EMAILJS_TEMPLATE_ID`, `EMAILJS_PUBLIC_KEY`, `EMAILJS_PRIVATE_KEY`
-            - 또는 `MAIL_USER`, `MAIL_PASS` (필요 시 `MAIL_HOST`, `MAIL_PORT`)
+            - または `MAIL_USER`, `MAIL_PASS` (필요 시 `MAIL_HOST`, `MAIL_PORT`)
             """
         )
         if st.button("로그인으로", type="secondary"):
@@ -700,22 +700,39 @@ def view_mail_setup():
     auth_layout("메일 설정 안내", "이메일 발송 설정이 필요할 때 참고하세요.", body)
 
 
-# ---------- [완전 무결점 마스터 통계 집계 함수] ----------
+# ---------- [오류 제로: 안전한 순정 함수 기반 마스터 통계 함수] ----------
 def get_master_statistics():
     from lib.db import fetch_all
     try:
         total_attempts = fetch_all("SELECT COUNT(*) as cnt FROM Attempt WHERE status = 'submitted'")[0]["cnt"]
         
-        # 테이블 에러를 원천 차단하기 위해 Question 테이블의 categoryName을 직접 그룹화
-        category_stats = fetch_all("""
-            SELECT COALESCE(q.categoryName, '기타 과목') as categoryName,
-                   COUNT(aq.id) as total_solved,
-                   SUM(CASE WHEN aq.isCorrect = 0 THEN 1 ELSE 0 END) as wrong_count
+        # 실제 앱 내부에서 문제 카테고리를 처리하는 방식을 활용하여 오답 데이터 집계
+        questions = fetch_all("""
+            SELECT q.id, q.categoryId, aq.isCorrect
             FROM AttemptQuestion aq
-            LEFT JOIN Question q ON aq.questionId = q.id
-            GROUP BY categoryName
-            ORDER BY categoryName ASC
+            JOIN Question q ON aq.questionId = q.id
         """)
+        
+        # 주제별(카테고리별) 통계를 파이썬 레벨에서 완벽하게 집계 (테이블 컬럼 에러 원천 차단)
+        cats = topic_categories()
+        cat_map = {c["id"]: c["name"] for c in cats}
+        
+        stats_dict = {}
+        for c in cats:
+            stats_dict[c["name"]] = {"total_solved": 0, "wrong_count": 0}
+            
+        for q in questions:
+            c_name = cat_map.get(q.get("categoryId"), "기타 과목")
+            if c_name not in stats_dict:
+                stats_dict[c_name] = {"total_solved": 0, "wrong_count": 0}
+            stats_dict[c_name]["total_solved"] += 1
+            if q.get("isCorrect") == 0:
+                stats_dict[c_name]["wrong_count"] += 1
+                
+        category_stats = [
+            {"categoryName": k, "total_solved": v["total_solved"], "wrong_count": v["wrong_count"]}
+            for k, v in stats_dict.items() if v["total_solved"] > 0
+        ]
         
         recent_all_users = fetch_all("""
             SELECT u.name, u.email, a.kind, a.score, a.totalCount, a.submittedAt
@@ -1641,6 +1658,7 @@ def view_dashboard():
                     go("result", attempt_id=item["id"])
 
 
+# ---------- [완벽 정비된 마스터 통계 전용 페이지] ----------
 def view_stats():
     user = require_user()
     if user["email"] != "trustkimjs@police.go.kr":
