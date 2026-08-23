@@ -752,7 +752,7 @@ def get_master_statistics():
                                 "imagePath": q.get("imagePath", ""),
                                 "total_solved": 0,
                                 "wrong_count": 0,
-                                "orderIndex": q.get("orderIndex", 9999)
+                                "orderIndex": int(q.get("orderIndex", 9999))
                             }
                         if is_correct is not None:
                             question_data[stem_text]["total_solved"] += 1
@@ -774,10 +774,10 @@ def get_master_statistics():
         mock_category_stats = make_cat_stats(category_data_mock)
         topic_category_stats = make_cat_stats(category_data_topic)
         
-        # ★ 오답 횟수 많은 순 내림차순 정렬 후, 동일한 오답 횟수라면 문제 순번(orderIndex) 오름차순(1, 2, 3...)으로 정렬하여 11번이 2번보다 먼저 나오는 오류 원천 차단
+        # ★ 정수형(int)으로 철저히 변환하여 1번 다음 11번이 오던 문제 원천 차단 (-오답횟수 내림차순, orderIndex 오름차순)
         all_worst_questions = sorted(
             [q for q in question_data.values() if q["wrong_count"] > 0],
-            key=lambda x: (-x["wrong_count"], x.get("orderIndex", 9999))
+            key=lambda x: (-x["wrong_count"], int(x.get("orderIndex", 9999)))
         )
         
         return {
@@ -1447,7 +1447,7 @@ def app_shell_css():
         """
     )
     
-    # --------- 오디오 버튼음 및 1번 다음 2번 정렬 보장 자바스크립트 완벽 적용 ---------
+    # --------- 오디오 버튼음용 자바스크립트 완벽 복구 ---------
     components.html(
         """
         <script>
@@ -1801,8 +1801,8 @@ def view_master_stats():
             if selected_cat_filter != "-- 과목을 선택해 주세요 --":
                 filtered_worsts = [q for q in all_worsts if q["categoryName"] == selected_cat_filter]
                 
-                # ★ 1번 다음 11번으로 나오던 정렬 오류 완벽 해결 (오답 횟수 내림차순 정렬 후, 동일 횟수면 orderIndex 기준 오름차순 1, 2, 3...)
-                filtered_worsts = sorted(filtered_worsts, key=lambda x: (-x["wrong_count"], x.get("orderIndex", 9999)))
+                # ★ 정수 변환 정렬 적용 (1번 다음 11번이 오던 오류 완벽 해결)
+                filtered_worsts = sorted(filtered_worsts, key=lambda x: (-x["wrong_count"], int(x.get("orderIndex", 9999))))
                 
                 if filtered_worsts:
                     for idx, wq in enumerate(filtered_worsts[:15], 1):
@@ -2175,7 +2175,7 @@ def view_result():
     total = attempt["totalCount"]
     pct = round(score / total * 100) if total else 0
     
-    questions = sorted(questions, key=lambda x: x.get("orderIndex", 0))
+    questions = sorted(questions, key=lambda x: int(x.get("orderIndex", 0)))
     wrongs = [q for q in questions if not q["isCorrect"]]
 
     st.markdown(
