@@ -700,7 +700,7 @@ def view_mail_setup():
     auth_layout("메일 설정 안내", "이메일 발송 설정이 필요할 때 참고하세요.", body)
 
 
-# ---------- [중복 풀이 시에도 오답 카운트가 정확히 누적되는 완벽 집계 함수] ----------
+# ---------- [다중 제출 시 오답 및 풀이 횟수가 정확히 누적되는 마스터 통계 집계 함수] ----------
 def get_master_statistics():
     from lib.db import fetch_all
     try:
@@ -725,7 +725,6 @@ def get_master_statistics():
                 topic_attempts_count += 1
                 
             try:
-                # load_exam을 통해 해당 시험의 모든 문항과 사용자의 정오답 상태를 가져옴
                 _, questions = load_exam(att_id, user_id)
                 for q in questions:
                     cat_name = q.get("categoryName") or "기타"
@@ -754,7 +753,6 @@ def get_master_statistics():
                                 "total_solved": 0,
                                 "wrong_count": 0
                             }
-                        # 각 제출 회차마다 풀이 및 오답 횟수를 누적 합산
                         if is_correct is not None:
                             question_data[q_id]["total_solved"] += 1
                             if not is_correct:
@@ -1802,7 +1800,6 @@ def view_master_stats():
             
             if selected_cat_filter != "-- 과목을 선택해 주세요 --":
                 filtered_worsts = [q for q in all_worsts if q["categoryName"] == selected_cat_filter]
-                # 오답 횟수 많은 순으로 명시적 내림차순 정렬
                 filtered_worsts = sorted(filtered_worsts, key=lambda x: x["wrong_count"], reverse=True)
                 
                 if filtered_worsts:
