@@ -700,60 +700,72 @@ def view_mail_setup():
     auth_layout("메일 설정 안내", "이메일 발송 설정이 필요할 때 참고하세요.", body)
 
 
-# ---------- 마스터 통계 집계 함수 (sqlite3.Row 에러 방어 적용) ----------
+# ---------- [100% 안전한 파이썬 기반 통계 집계 함수] ----------
 def get_master_statistics():
     from lib.db import fetch_all
     try:
-        total_attempts = 0
-        try:
-            res_att = fetch_all("SELECT COUNT(*) as cnt FROM Attempt WHERE status = 'submitted'")
-            if res_att:
-                total_attempts = res_att[0]["cnt"]
-        except Exception:
-            pass
+        submitted_attempts = fetch_all("SELECT * FROM Attempt WHERE status = 'submitted'")
+        total_attempts = len(submitted_attempts)
         
+        category_data = {} # categoryName -> {"total": 0, "wrong": 0}
+        question_data = {} # questionId -> dict
+        
+        for att in submitted_attempts:
+            att_id = att["id"] if isinstance(att, dict) else att["id"]
+            user_id = att["userId"] if isinstance(att, dict) else att["userId"]
+            try:
+                _, questions = load_exam(att_id, user_id)
+                for q in questions:
+                    cat_name = q.get("categoryName") or "기타"
+                    is_correct = q.get("isCorrect")
+                    
+                    if cat_name not in category_data:
+                        category_data[cat_name] = {"total": 0, "wrong": 0}
+                    
+                    if is_correct is not None:
+                        category_data[cat_name]["total"] += 1
+                        if not is_correct:
+                            category_data[cat_name]["wrong"] += 1
+                            
+                    q_id = q.get("id")
+                    if q_id:
+                        if q_id not in question_data:
+                            question_data[q_id] = {
+                                "categoryName": cat_name,
+                                "stem": q.get("stem", ""),
+                                "source": q.get("source", ""),
+                                "total_solved": 0,
+                                "wrong_count": 0
+                            }
+                        if is_correct is not None:
+                            question_data[q_id]["total_solved"] += 1
+                            if not is_correct:
+                                question_data[q_id]["wrong_count"] += 1
+            except Exception:
+                pass
+                
         category_stats = []
-        try:
-            category_stats = fetch_all("""
-                SELECT q.categoryName, 
-                       COUNT(aq.id) as total_solved,
-                       SUM(CASE WHEN aq.isCorrect = 0 THEN 1 ELSE 0 END) as wrong_count
-                FROM AttemptQuestion aq
-                JOIN Question q ON aq.questionId = q.id
-                GROUP BY q.categoryName
-                ORDER BY q.categoryName ASC
-            """)
-        except Exception:
-            pass
+        for cat_name in sorted(category_data.keys()):
+            category_stats.append({
+                "categoryName": cat_name,
+                "total_solved": category_data[cat_name]["total"],
+                "wrong_count": category_data[cat_name]["wrong"]
+            })
+            
+        detailed_worst_questions = sorted(
+            [q for q in question_data.values() if q["wrong_count"] > 0],
+            key=lambda x: x["wrong_count"],
+            reverse=True
+        )[:10]
         
-        detailed_worst_questions = []
-        try:
-            detailed_worst_questions = fetch_all("""
-                SELECT q.categoryName, q.stem, q.source,
-                       SUM(CASE WHEN aq.isCorrect = 0 THEN 1 ELSE 0 END) as wrong_count,
-                       COUNT(aq.id) as total_solved
-                FROM AttemptQuestion aq
-                JOIN Question q ON aq.questionId = q.id
-                GROUP BY q.id
-                HAVING wrong_count > 0
-                ORDER BY wrong_count DESC
-                LIMIT 10
-            """)
-        except Exception:
-            pass
-        
-        recent_all_users = []
-        try:
-            recent_all_users = fetch_all("""
-                SELECT u.name, u.email, a.kind, a.score, a.totalCount, a.submittedAt
-                FROM Attempt a
-                JOIN User u ON a.userId = u.id
-                WHERE a.status = 'submitted'
-                ORDER BY a.submittedAt DESC
-                LIMIT 10
-            """)
-        except Exception:
-            pass
+        recent_all_users = fetch_all("""
+            SELECT u.name, u.email, a.kind, a.score, a.totalCount, a.submittedAt
+            FROM Attempt a
+            JOIN User u ON a.userId = u.id
+            WHERE a.status = 'submitted'
+            ORDER BY a.submittedAt DESC
+            LIMIT 10
+        """)
         
         return {
             "total_attempts": total_attempts,
