@@ -700,7 +700,7 @@ def view_mail_setup():
     auth_layout("메일 설정 안내", "이메일 발송 설정이 필요할 때 참고하세요.", body)
 
 
-# ---------- [지문 기준 누적 오답 카운팅 통계 집계 함수] ----------
+# ---------- [모의고사 과목별 중복 카운트 방지 및 지문 기준 누적 통계 집계 함수] ----------
 def get_master_statistics():
     from lib.db import fetch_all
     try:
@@ -726,6 +726,11 @@ def get_master_statistics():
                 
             try:
                 _, questions = load_exam(att_id, user_id)
+                
+                # ★ 실전 모의고사(mock)의 경우 1회 시험에서 여러 과목의 문제들이 섞여 나오므로,
+                # 해당 시험 안에서 각 과목별로 '한 번만' 등장한 것으로 처리하여 1회 완료로 정확히 카운트
+                counted_cats_in_this_attempt = set()
+                
                 for q in questions:
                     cat_name = q.get("categoryName") or "기타"
                     is_correct = q.get("isCorrect")
@@ -734,11 +739,17 @@ def get_master_statistics():
                     if cat_name not in cat_target:
                         cat_target[cat_name] = {"total": 0, "wrong": 0}
                     
-                    if is_correct is not None:
-                        cat_target[cat_name]["total"] += 1
-                        if not is_correct:
-                            cat_target[cat_name]["wrong"] += 1
-                            
+                    if kind == "mock":
+                        if cat_name not in counted_cats_in_this_attempt:
+                            counted_cats_in_this_attempt.add(cat_name)
+                            cat_target[cat_name]["total"] += 1
+                            # 모의고사에서 해당 과목에 속한 문항 중 하나라도 틀렸다면 해당 과목 오답 1회 누적
+                    else:
+                        if is_correct is not None:
+                            cat_target[cat_name]["total"] += 1
+                            if not is_correct:
+                                cat_target[cat_name]["wrong"] += 1
+                                
                     stem_text = q.get("stem", "").strip()
                     if stem_text:
                         if stem_text not in question_data:
@@ -758,6 +769,18 @@ def get_master_statistics():
                             question_data[stem_text]["total_solved"] += 1
                             if not is_correct:
                                 question_data[stem_text]["wrong_count"] += 1
+                                
+                # 모의고사 과목별 오답 체크 (모의고사 시험지 내에서 해당 과목을 틀린 경우 wrong +1)
+                if kind == "mock":
+                    mock_cat_wrong_check = {}
+                    for q in questions:
+                        c_name = q.get("categoryName") or "기타"
+                        if q.get("isCorrect") is False:
+                            mock_cat_wrong_check[c_name] = True
+                    for c_name in mock_cat_wrong_check:
+                        if c_name in category_data_mock:
+                            category_data_mock[c_name]["wrong"] += 1
+
             except Exception:
                 pass
                 
@@ -774,7 +797,6 @@ def get_master_statistics():
         mock_category_stats = make_cat_stats(category_data_mock)
         topic_category_stats = make_cat_stats(category_data_topic)
         
-        # ★ 정수형(int)으로 철저히 변환하여 1번 다음 11번이 오던 문제 원천 차단 (-오답횟수 내림차순, orderIndex 오름차순)
         all_worst_questions = sorted(
             [q for q in question_data.values() if q["wrong_count"] > 0],
             key=lambda x: (-x["wrong_count"], int(x.get("orderIndex", 9999)))
@@ -1795,13 +1817,11 @@ def view_master_stats():
         
         all_worsts = stats.get("all_worst_questions", [])
         if all_worsts:
-            available_cats = sorted(list(set(q["categoryName"] for q in all_worsts)))
+            available_cats = sorted(list(set(q["categoryName"] for q in all_worsts)), key=lambda s: int(re.match(r"^(\d+)", s).group(1)) if re.match(r"^(\d+)", s) else 999)
             selected_cat_filter = st.selectbox("과목(종류)을 선택하세요", options=["-- 과목을 선택해 주세요 --"] + available_cats, key="worst_q_cat_filter")
             
             if selected_cat_filter != "-- 과목을 선택해 주세요 --":
                 filtered_worsts = [q for q in all_worsts if q["categoryName"] == selected_cat_filter]
-                
-                # ★ 정수 변환 정렬 적용 (1번 다음 11번이 오던 오류 완벽 해결)
                 filtered_worsts = sorted(filtered_worsts, key=lambda x: (-x["wrong_count"], int(x.get("orderIndex", 9999))))
                 
                 if filtered_worsts:
@@ -2158,6 +2178,7 @@ def view_result():
     app_shell_css()
     attempt_id = st.session_state.attempt_id
     attempt, questions = load_exam(attempt_id, user["id"])
+    import re
     if not attempt:
         st.error("결과를 찾을 수 없습니다.")
         if st.button("홈으로"):
