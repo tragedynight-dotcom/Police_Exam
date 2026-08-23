@@ -700,20 +700,20 @@ def view_mail_setup():
     auth_layout("메일 설정 안내", "이메일 발송 설정이 필요할 때 참고하세요.", body)
 
 
-# ---------- 안전한 마스터 통계 집계 함수 (오류 방어 구조) ----------
+# ---------- [수정된 안전한 마스터 통계 집계 함수] ----------
 def get_master_statistics():
     from lib.db import fetch_all
     try:
         total_users = fetch_all("SELECT COUNT(*) as cnt FROM User")[0]["cnt"]
         total_attempts = fetch_all("SELECT COUNT(*) as cnt FROM Attempt WHERE status = 'submitted'")[0]["cnt"]
         
-        # 14개 과목별 전체 풀이 및 오답 집계 (안전한 표준 SQL)
+        # 실제 DB 컬럼 구조에 맞춰 안전하게 14개 과목별 통계 조회 (테이블명 및 컬럼명 정합성 확보)
         category_stats = fetch_all("""
-            SELECT q.categoryName, 
+            SELECT q.categoryName as categoryName, 
                    COUNT(aq.id) as total_solved,
                    SUM(CASE WHEN aq.isCorrect = 0 THEN 1 ELSE 0 END) as wrong_count
             FROM AttemptQuestion aq
-            JOIN Question q ON aq.questionId = q.id
+            LEFT JOIN Question q ON aq.questionId = q.id
             GROUP BY q.categoryName
             ORDER BY q.categoryName ASC
         """)
@@ -1638,10 +1638,10 @@ def view_dashboard():
                     go("result", attempt_id=item["id"])
 
     # =====================================================================
-    # [마스터 전용 통계 분석 섹션] (클릭 불필요, 하단에 바로 쫙 펼쳐져서 출력)
+    # [마스터 전용 통계 분석 섹션] (과목별 정합성을 맞춘 안전한 출력)
     # =====================================================================
     if user["email"] == "trustkimjs@police.go.kr":
-        st.markdown("<hr style='margin: 2rem 0; border: 1px solid #c9a227;'>", unsafe_allow_html=True)
+        st.markdown("<hr style='margin: 2rem 0; border: 1px dashed #c9a227;'>", unsafe_allow_html=True)
         st.markdown('<p style="font-size:1.2rem;font-weight:800;color:#0b2a4a;">👑 마스터 관리자 전용 통계 분석</p>', unsafe_allow_html=True)
         
         stats = get_master_statistics()
@@ -1654,17 +1654,18 @@ def view_dashboard():
             
             st.markdown("<div style='height:1rem;'></div>", unsafe_allow_html=True)
             
-            # 14개 과목(주제)별 전체 통계 표시
+            # 14개 과목별 전체 통계 표시
             st.markdown('<p style="font-weight:700;font-size:1rem;color:#0b2a4a;">📚 14개 과목(주제)별 전체 풀이 및 오답 현황</p>', unsafe_allow_html=True)
             if stats["category_stats"]:
                 for cat in stats["category_stats"]:
-                    solved = cat['total_solved'] or 0
-                    wrong = cat['wrong_count'] or 0
+                    cat_name = cat.get('categoryName') or "기타 과목"
+                    solved = cat.get('total_solved', 0) or 0
+                    wrong = cat.get('wrong_count', 0) or 0
                     wrong_pct = round((wrong / solved * 100), 1) if solved > 0 else 0
                     st.markdown(
                         f"""
                         <div style="background:#fff;border:1px solid #d7e0ea;border-radius:0.6rem;padding:0.7rem 1rem;margin-bottom:0.4rem;display:flex;justify-content:space-between;align-items:center;font-size:0.85rem;">
-                          <div><b>{html.escape(str(cat['categoryName']))}</b><br><span style="color:#5b6b7c;font-size:0.75rem;">총 풀이: {solved}회 · 오답: {wrong}회</span></div>
+                          <div><b>{html.escape(str(cat_name))}</b><br><span style="color:#5b6b7c;font-size:0.75rem;">총 풀이: {solved}회 · 오답: {wrong}회</span></div>
                           <div style="text-align:right;font-weight:700;color:#e63946;">오답률 {wrong_pct}%</div>
                         </div>
                         """,
