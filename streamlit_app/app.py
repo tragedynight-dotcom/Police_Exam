@@ -700,7 +700,7 @@ def view_mail_setup():
     auth_layout("메일 설정 안내", "이메일 발송 설정이 필요할 때 참고하세요.", body)
 
 
-# ---------- [문제 지문(stem) 기준 완벽 누적 카운팅 통계 집계 함수] ----------
+# ---------- [지문 기준 누적 오답 카운팅 통계 집계 함수] ----------
 def get_master_statistics():
     from lib.db import fetch_all
     try:
@@ -739,7 +739,6 @@ def get_master_statistics():
                         if not is_correct:
                             cat_target[cat_name]["wrong"] += 1
                             
-                    # ★ 핵심 수정: 고유 ID 대신 문제 지문(stem)을 키로 사용하여 동일한 질문을 반복 풀었을 때 횟수가 누적되도록 함
                     stem_text = q.get("stem", "").strip()
                     if stem_text:
                         if stem_text not in question_data:
@@ -774,7 +773,6 @@ def get_master_statistics():
         mock_category_stats = make_cat_stats(category_data_mock)
         topic_category_stats = make_cat_stats(category_data_topic)
         
-        # 오답 횟수가 많은 순서대로 명시적 내림차순 정렬
         all_worst_questions = sorted(
             [q for q in question_data.values() if q["wrong_count"] > 0],
             key=lambda x: x["wrong_count"],
@@ -1508,7 +1506,7 @@ def app_shell_css():
                 }, true);
             }
 
-            # 하단 3버튼 가로 1줄 고정 강제 적용
+            // 하단 3버튼 가로 1줄 고정 강제 적용
             setInterval(function() {
                 var marks = doc.querySelectorAll('.exam-nav-side-mark, .result-actions-mark');
                 marks.forEach(function(mark) {
@@ -1598,9 +1596,9 @@ def view_dashboard():
         if st.button("로그아웃", type="secondary", key="dash_logout"):
             logout()
             
-    # [마스터 전용] 상단 새 페이지 이동 버튼 추가
+    # [학습 통계 분석 페이지 이동 버튼]
     if user["email"] == "trustkimjs@police.go.kr":
-        if st.button("👑 마스터 관리자 전용 통계 분석 페이지로 이동", type="primary", use_container_width=True, key="go_master_stats_page"):
+        if st.button("📊 학습 관련 통계 분석 페이지로 이동", type="primary", use_container_width=True, key="go_master_stats_page"):
             go("master_stats")
 
     active = get_active_attempt(user["id"])
@@ -1709,7 +1707,7 @@ def view_dashboard():
 
 
 # =====================================================================
-# [마스터 전용 통계 분석 새 페이지 뷰 (지문 기준 누적 반영)]
+# [학습 관련 통계 분석 페이지 뷰 (과목별 현황 펼치기 및 오답률 퍼센트 추가)]
 # =====================================================================
 def view_master_stats():
     user = require_user()
@@ -1722,7 +1720,7 @@ def view_master_stats():
     st.markdown(
         """
         <p class="damoa-brand">지역 경찰 실무 역량 평가 다통과</p>
-        <p class="damoa-title">👑 마스터 관리자 전용 통계 분석</p>
+        <p class="damoa-title">📊 학습 관련 통계 분석</p>
         <p class="damoa-muted" style="margin-top:0.45rem;">
           14개 과목 전체 현황 및 수험생 최다 오답 문항 분석 리포트입니다.
         </p>
@@ -1740,7 +1738,6 @@ def view_master_stats():
             
         st.markdown("<div style='height:0.5rem;'></div>", unsafe_allow_html=True)
         
-        # 상단 완료 시험 건수 구분 카드 (모의고사 vs 주제별)
         c_m, c_t = st.columns(2, gap="small")
         with c_m:
             st.markdown(f'<div style="background:#fff;border:1px solid #d7e0ea;border-radius:0.6rem;padding:0.9rem;text-align:center;"><p style="font-size:0.8rem;color:#5b6b7c;margin:0;">실전 모의고사 완료</p><p style="font-size:1.3rem;font-weight:800;color:#0b2a4a;margin:0.2rem 0 0;">{stats.get("mock_attempts_count", 0)}건</p></div>', unsafe_allow_html=True)
@@ -1749,50 +1746,51 @@ def view_master_stats():
         
         st.markdown("<div style='height:1rem;'></div>", unsafe_allow_html=True)
         
-        # 과목별 현황을 탭으로 보기 좋게 구분
         tab_mock, tab_topic = st.tabs(["📝 실전 모의고사 과목별 현황", "📚 주제별 문제풀이 과목별 현황"])
         
         with tab_mock:
             mock_stats = stats.get("mock_category_stats", [])
             if mock_stats:
-                for cat in mock_stats:
-                    solved = cat["total_solved"]
-                    wrong = cat["wrong_count"]
-                    wrong_pct = round((wrong / solved * 100), 1) if solved > 0 else 0
-                    st.markdown(
-                        f"""
-                        <div style="background:#fff;border:1px solid #d7e0ea;border-radius:0.6rem;padding:0.7rem 1rem;margin-bottom:0.4rem;display:flex;justify-content:space-between;align-items:center;font-size:0.85rem;">
-                          <div><b>{html.escape(str(cat['categoryName']))}</b><br><span style="color:#5b6b7c;font-size:0.75rem;">총 풀이: {solved}회 · 오답: {wrong}회</span></div>
-                          <div style="text-align:right;font-weight:700;color:#e63946;">오답률 {wrong_pct}%</div>
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
+                # 과목별 현황을 펼치기(Expander) 안으로 감싸서 깔끔하게 보기 좋게 배치
+                with st.expander("📂 실전 모의고사 과목별 상세 현황 보기 (클릭하여 펼치기)"):
+                    for cat in mock_stats:
+                        solved = cat["total_solved"]
+                        wrong = cat["wrong_count"]
+                        wrong_pct = round((wrong / solved * 100), 1) if solved > 0 else 0
+                        st.markdown(
+                            f"""
+                            <div style="background:#fff;border:1px solid #d7e0ea;border-radius:0.6rem;padding:0.7rem 1rem;margin-bottom:0.4rem;display:flex;justify-content:space-between;align-items:center;font-size:0.85rem;">
+                              <div><b>{html.escape(str(cat['categoryName']))}</b><br><span style="color:#5b6b7c;font-size:0.75rem;">총 풀이: {solved}회 · 오답: {wrong}회</span></div>
+                              <div style="text-align:right;font-weight:700;color:#e63946;">오답률 {wrong_pct}%</div>
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
             else:
                 st.markdown('<p style="font-size:0.85rem;color:#5b6b7c;padding:0.5rem 0;">완료된 실전 모의고사 데이터가 없습니다.</p>', unsafe_allow_html=True)
                 
         with tab_topic:
             topic_stats = stats.get("topic_category_stats", [])
             if topic_stats:
-                for cat in topic_stats:
-                    solved = cat["total_solved"]
-                    wrong = cat["wrong_count"]
-                    wrong_pct = round((wrong / solved * 100), 1) if solved > 0 else 0
-                    st.markdown(
-                        f"""
-                        <div style="background:#fff;border:1px solid #d7e0ea;border-radius:0.6rem;padding:0.7rem 1rem;margin-bottom:0.4rem;display:flex;justify-content:space-between;align-items:center;font-size:0.85rem;">
-                          <div><b>{html.escape(str(cat['categoryName']))}</b><br><span style="color:#5b6b7c;font-size:0.75rem;">총 풀이: {solved}회 · 오답: {wrong}회</span></div>
-                          <div style="text-align:right;font-weight:700;color:#e63946;">오답률 {wrong_pct}%</div>
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
+                with st.expander("📂 주제별 문제풀이 과목별 상세 현황 보기 (클릭하여 펼치기)"):
+                    for cat in topic_stats:
+                        solved = cat["total_solved"]
+                        wrong = cat["wrong_count"]
+                        wrong_pct = round((wrong / solved * 100), 1) if solved > 0 else 0
+                        st.markdown(
+                            f"""
+                            <div style="background:#fff;border:1px solid #d7e0ea;border-radius:0.6rem;padding:0.7rem 1rem;margin-bottom:0.4rem;display:flex;justify-content:space-between;align-items:center;font-size:0.85rem;">
+                              <div><b>{html.escape(str(cat['categoryName']))}</b><br><span style="color:#5b6b7c;font-size:0.75rem;">총 풀이: {solved}회 · 오답: {wrong}회</span></div>
+                              <div style="text-align:right;font-weight:700;color:#e63946;">오답률 {wrong_pct}%</div>
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
             else:
                 st.markdown('<p style="font-size:0.85rem;color:#5b6b7c;padding:0.5rem 0;">완료된 주제별 문제풀이 데이터가 없습니다.</p>', unsafe_allow_html=True)
 
         st.markdown("<div style='height:1rem;'></div>", unsafe_allow_html=True)
 
-        # 수험생들이 가장 많이 틀린 구체적인 문항 분석 (지문 기준 누적 카운트 반영)
         st.markdown('<p style="font-weight:700;font-size:1.05rem;color:#e63946;">⚠️ 과목별 최다 오답 문항 분석 및 상세 보기 (오답 많은 순 정렬)</p>', unsafe_allow_html=True)
         
         all_worsts = stats.get("all_worst_questions", [])
@@ -1809,8 +1807,12 @@ def view_master_stats():
                         stem_text = strip_difficulty_marker(wq["stem"] or '')
                         stem_preview = (stem_text[:70] + '...') if len(stem_text) > 70 else stem_text
                         
-                        # [지문 키 기반 누적 횟수 정상 반영]
-                        with st.expander(f"[{wq['categoryName']}] 오답 {wq['wrong_count']}회 (총 풀이 {wq['total_solved']}회) - {stem_preview}"):
+                        # ★ 각 문항별 오답률(%) 퍼센트 계산 및 표시 추가
+                        wq_solved = wq["total_solved"]
+                        wq_wrong = wq["wrong_count"]
+                        wq_pct = round((wq_wrong / wq_solved * 100), 1) if wq_solved > 0 else 0
+                        
+                        with st.expander(f"[{wq['categoryName']}] 오답 {wq['wrong_count']}회 / 총 풀이 {wq['total_solved']}회 (오답률 {wq_pct}%) - {stem_preview}"):
                             st.markdown(f"**[전체 지문]**\n\n{wq['stem']}")
                             
                             img = image_path_for(wq.get("imagePath"))
@@ -2171,6 +2173,9 @@ def view_result():
     score = attempt["score"] or 0
     total = attempt["totalCount"]
     pct = round(score / total * 100) if total else 0
+    
+    # 모의고사 및 결과 화면에서도 문제 순서가 1번부터 순차적으로 정렬되도록 보장
+    questions = sorted(questions, key=lambda x: x.get("orderIndex", 0))
     wrongs = [q for q in questions if not q["isCorrect"]]
 
     st.markdown(
