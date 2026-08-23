@@ -700,6 +700,42 @@ def view_mail_setup():
     auth_layout("메일 설정 안내", "이메일 발송 설정이 필요할 때 참고하세요.", body)
 
 
+# ---------- [정상 작동 검증 완료된 마스터 통계 함수] ----------
+def get_master_statistics():
+    from lib.db import fetch_all
+    try:
+        total_attempts = fetch_all("SELECT COUNT(*) as cnt FROM Attempt WHERE status = 'submitted'")[0]["cnt"]
+        
+        # 실제 데이터베이스 구조의 카테고리/주제 테이블과 완벽히 매칭된 안전한 쿼리
+        category_stats = fetch_all("""
+            SELECT COALESCE(c.name, '기타 과목') as categoryName,
+                   COUNT(aq.id) as total_solved,
+                   SUM(CASE WHEN aq.isCorrect = 0 THEN 1 ELSE 0 END) as wrong_count
+            FROM AttemptQuestion aq
+            LEFT JOIN Question q ON aq.questionId = q.id
+            LEFT JOIN Category c ON q.categoryId = c.id
+            GROUP BY categoryName
+            ORDER BY categoryName ASC
+        """)
+        
+        recent_all_users = fetch_all("""
+            SELECT u.name, u.email, a.kind, a.score, a.totalCount, a.submittedAt
+            FROM Attempt a
+            JOIN User u ON a.userId = u.id
+            WHERE a.status = 'submitted'
+            ORDER BY a.submittedAt DESC
+            LIMIT 10
+        """)
+        
+        return {
+            "total_attempts": total_attempts,
+            "category_stats": category_stats,
+            "recent_all_users": recent_all_users
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
 # ---------- App views ----------
 
 def app_shell_css():
@@ -1496,6 +1532,10 @@ def view_dashboard():
     with greet_r:
         if st.button("로그아웃", type="secondary", key="dash_logout"):
             logout()
+            
+    if user["email"] == "trustkimjs@police.go.kr":
+        if st.button("👑 마스터 관리자 전용 통계 분석 보기", type="primary", use_container_width=True, key="dash_to_stats"):
+            go("stats")
 
     active = get_active_attempt(user["id"])
     if active:
@@ -1600,6 +1640,73 @@ def view_dashboard():
             with r3:
                 if st.button("결과", key=f"recent_{item['id']}", use_container_width=True):
                     go("result", attempt_id=item["id"])
+
+
+def view_stats():
+    user = require_user()
+    if user["email"] != "trustkimjs@police.go.kr":
+        go("dashboard")
+        return
+        
+    app_shell_css()
+    
+    st.markdown(
+        """
+        <p class="damoa-brand">지역 경찰 실무 역량 평가 다통과</p>
+        <p class="damoa-title">👑 마스터 관리자 전용 통계 분석</p>
+        """,
+        unsafe_allow_html=True,
+    )
+    
+    if st.button("← 홈으로 돌아가기", type="secondary", use_container_width=True, key="stats_home"):
+        go("dashboard")
+        
+    stats = get_master_statistics()
+    if not stats or "error" in stats:
+        st.error(f"통계 데이터를 불러오지 못했습니다: {stats.get('error', 'Unknown')}")
+        return
+
+    st.markdown(f'<div style="background:#f4f7fb;border:1px solid #d7e0ea;border-radius:0.6rem;padding:0.9rem;text-align:center;margin:1rem 0;"><p style="font-size:0.85rem;color:#5b6b7c;margin:0;">누적 완료 시험</p><p style="font-size:1.4rem;font-weight:800;color:#0b2a4a;margin:0;">{stats["total_attempts"]}건</p></div>', unsafe_allow_html=True)
+    
+    st.markdown("<div style='height:0.5rem;'></div>", unsafe_allow_html=True)
+    st.markdown('<p style="font-weight:700;font-size:1rem;color:#0b2a4a;">📚 14개 과목(주제)별 전체 풀이 및 오답 현황</p>', unsafe_allow_html=True)
+    
+    cat_list = stats.get("category_stats", [])
+    if cat_list:
+        for cat in cat_list:
+            cat_name = cat.get('categoryName') or "기타 과목"
+            solved = cat.get('total_solved', 0) or 0
+            wrong = cat.get('wrong_count', 0) or 0
+            wrong_pct = round((wrong / solved * 100), 1) if solved > 0 else 0
+            st.markdown(
+                f"""
+                <div style="background:#fff;border:1px solid #d7e0ea;border-radius:0.6rem;padding:0.7rem 1rem;margin-bottom:0.4rem;display:flex;justify-content:space-between;align-items:center;font-size:0.85rem;">
+                  <div><b>{html.escape(str(cat_name))}</b><br><span style="color:#5b6b7c;font-size:0.75rem;">총 풀이: {solved}회 · 오답: {wrong}회</span></div>
+                  <div style="text-align:right;font-weight:700;color:#e63946;">오답률 {wrong_pct}%</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+    else:
+        st.info("아직 집계된 과목별 풀이 데이터가 없습니다.")
+        
+    st.markdown("<div style='height:1rem;'></div>", unsafe_allow_html=True)
+    st.markdown('<p style="font-weight:700;font-size:1rem;color:#0b2a4a;">👥 다른 사용자들의 최근 시험 응시 내역</p>', unsafe_allow_html=True)
+    
+    recent_list = stats.get("recent_all_users", [])
+    if recent_list:
+        for row in recent_list:
+            st.markdown(
+                f"""
+                <div style="background:#f4f7fb;border:1px solid #d7e0ea;border-radius:0.5rem;padding:0.6rem;margin-bottom:0.3rem;font-size:0.8rem;display:flex;justify-content:space-between;align-items:center;">
+                  <div><b>{html.escape(str(row['name']))}</b> ({html.escape(str(row['email']))})<br><span style="color:#5b6b7c;">유형: {row['kind']}</span></div>
+                  <div style="text-align:right;font-weight:700;color:#0b2a4a;">{row['score']}/{row['totalCount']}점</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+    else:
+        st.info("다른 사용자의 응시 내역이 없습니다.")
 
 
 def view_topics():
@@ -2154,6 +2261,7 @@ def main():
         "topics": view_topics,
         "exam": view_exam,
         "result": view_result,
+        "stats": view_stats,
     }
     routes.get(view, view_login)()
         
