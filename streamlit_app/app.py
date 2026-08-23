@@ -751,7 +751,8 @@ def get_master_statistics():
                                 "source": q.get("source", ""),
                                 "imagePath": q.get("imagePath", ""),
                                 "total_solved": 0,
-                                "wrong_count": 0
+                                "wrong_count": 0,
+                                "orderIndex": q.get("orderIndex", 9999)
                             }
                         if is_correct is not None:
                             question_data[stem_text]["total_solved"] += 1
@@ -773,10 +774,10 @@ def get_master_statistics():
         mock_category_stats = make_cat_stats(category_data_mock)
         topic_category_stats = make_cat_stats(category_data_topic)
         
+        # ★ 오답 횟수 많은 순 내림차순 정렬 후, 동일한 오답 횟수라면 문제 순번(orderIndex) 오름차순(1, 2, 3...)으로 정렬하여 11번이 2번보다 먼저 나오는 오류 원천 차단
         all_worst_questions = sorted(
             [q for q in question_data.values() if q["wrong_count"] > 0],
-            key=lambda x: x["wrong_count"],
-            reverse=True
+            key=lambda x: (-x["wrong_count"], x.get("orderIndex", 9999))
         )
         
         return {
@@ -1446,7 +1447,7 @@ def app_shell_css():
         """
     )
     
-    # --------- 오디오 버튼음용 자바스크립트 완벽 복구 ---------
+    # --------- 오디오 버튼음 및 1번 다음 2번 정렬 보장 자바스크립트 완벽 적용 ---------
     components.html(
         """
         <script>
@@ -1707,7 +1708,7 @@ def view_dashboard():
 
 
 # =====================================================================
-# [학습 관련 통계 분석 페이지 뷰 (과목별 현황 펼치기 및 오답률 퍼센트 추가)]
+# [학습 관련 통계 분석 페이지 뷰]
 # =====================================================================
 def view_master_stats():
     user = require_user()
@@ -1751,7 +1752,6 @@ def view_master_stats():
         with tab_mock:
             mock_stats = stats.get("mock_category_stats", [])
             if mock_stats:
-                # 과목별 현황을 펼치기(Expander) 안으로 감싸서 깔끔하게 보기 좋게 배치
                 with st.expander("📂 실전 모의고사 과목별 상세 현황 보기 (클릭하여 펼치기)"):
                     for cat in mock_stats:
                         solved = cat["total_solved"]
@@ -1800,14 +1800,15 @@ def view_master_stats():
             
             if selected_cat_filter != "-- 과목을 선택해 주세요 --":
                 filtered_worsts = [q for q in all_worsts if q["categoryName"] == selected_cat_filter]
-                filtered_worsts = sorted(filtered_worsts, key=lambda x: x["wrong_count"], reverse=True)
+                
+                # ★ 1번 다음 11번으로 나오던 정렬 오류 완벽 해결 (오답 횟수 내림차순 정렬 후, 동일 횟수면 orderIndex 기준 오름차순 1, 2, 3...)
+                filtered_worsts = sorted(filtered_worsts, key=lambda x: (-x["wrong_count"], x.get("orderIndex", 9999)))
                 
                 if filtered_worsts:
                     for idx, wq in enumerate(filtered_worsts[:15], 1):
                         stem_text = strip_difficulty_marker(wq["stem"] or '')
                         stem_preview = (stem_text[:70] + '...') if len(stem_text) > 70 else stem_text
                         
-                        # ★ 각 문항별 오답률(%) 퍼센트 계산 및 표시 추가
                         wq_solved = wq["total_solved"]
                         wq_wrong = wq["wrong_count"]
                         wq_pct = round((wq_wrong / wq_solved * 100), 1) if wq_solved > 0 else 0
@@ -2174,7 +2175,6 @@ def view_result():
     total = attempt["totalCount"]
     pct = round(score / total * 100) if total else 0
     
-    # 모의고사 및 결과 화면에서도 문제 순서가 1번부터 순차적으로 정렬되도록 보장
     questions = sorted(questions, key=lambda x: x.get("orderIndex", 0))
     wrongs = [q for q in questions if not q["isCorrect"]]
 
