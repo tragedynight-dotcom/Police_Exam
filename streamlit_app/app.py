@@ -700,7 +700,7 @@ def view_mail_setup():
     auth_layout("메일 설정 안내", "이메일 발송 설정이 필요할 때 참고하세요.", body)
 
 
-# ---------- [모의고사 vs 주제별 완벽 분리 및 안전한 순회 집계 함수] ----------
+# ---------- [완벽한 오답 누적 집계 함수 (중복 제출 시 횟수 누적 반영)] ----------
 def get_master_statistics():
     from lib.db import fetch_all
     try:
@@ -712,7 +712,7 @@ def get_master_statistics():
         
         category_data_mock = {}
         category_data_topic = {}
-        question_data = {}
+        question_data = {} 
         
         for att in submitted_attempts:
             att_id = att["id"] if isinstance(att, dict) else att["id"]
@@ -741,6 +741,7 @@ def get_master_statistics():
                             
                     q_id = q.get("id")
                     if q_id:
+                        # 고유 문제별로 누적 집계 (풀릴 때마다 total_solved 증가, 틀릴 때마다 wrong_count 증가)
                         if q_id not in question_data:
                             question_data[q_id] = {
                                 "categoryName": cat_name,
@@ -1707,7 +1708,7 @@ def view_dashboard():
 
 
 # =====================================================================
-# [마스터 전용 통계 분석 새 페이지 뷰 (모의고사 / 주제별 분리 보기)]
+# [마스터 전용 통계 분석 새 페이지 뷰 (과목별 선택 시에만 최다 오답 표시)]
 # =====================================================================
 def view_master_stats():
     user = require_user()
@@ -1790,42 +1791,46 @@ def view_master_stats():
 
         st.markdown("<div style='height:1rem;'></div>", unsafe_allow_html=True)
 
-        # 수험생들이 가장 많이 틀린 구체적인 문항 분석 (오답 횟수 많은 순 정렬 및 과목별 선택)
+        # 수험생들이 가장 많이 틀린 구체적인 문항 분석 (과목별 선택 전에는 노출하지 않고, 선택 시에만 오답 많은 순 정렬 노출)
         st.markdown('<p style="font-weight:700;font-size:1.05rem;color:#e63946;">⚠️ 과목별 최다 오답 문항 분석 및 상세 보기 (오답 많은 순 정렬)</p>', unsafe_allow_html=True)
         
         all_worsts = stats.get("all_worst_questions", [])
         if all_worsts:
             available_cats = sorted(list(set(q["categoryName"] for q in all_worsts)))
-            selected_cat_filter = st.selectbox("과목(종류)별 선택", options=["전체보기"] + available_cats, key="worst_q_cat_filter")
+            # 기본 선택값을 안내 문구로 설정하여 처음에는 아무것도 안 나오게 처리
+            selected_cat_filter = st.selectbox("과목(종류)을 선택하세요", options=["-- 과목을 선택해 주세요 --"] + available_cats, key="worst_q_cat_filter")
             
-            filtered_worsts = all_worsts if selected_cat_filter == "전체보기" else [q for q in all_worsts if q["categoryName"] == selected_cat_filter]
-            filtered_worsts = sorted(filtered_worsts, key=lambda x: x["wrong_count"], reverse=True)
-            
-            if filtered_worsts:
-                for idx, wq in enumerate(filtered_worsts[:15], 1):
-                    stem_text = strip_difficulty_marker(wq["stem"] or '')
-                    stem_preview = (stem_text[:70] + '...') if len(stem_text) > 70 else stem_text
-                    
-                    with st.expander(f"[{wq['categoryName']}] 오답 {wq['wrong_count']}회 (총 풀이 {wq['total_solved']}회) - {stem_preview}"):
-                        st.markdown(f"**[전체 지문]**\n\n{wq['stem']}")
+            if selected_cat_filter != "-- 과목을 선택해 주세요 --":
+                filtered_worsts = [q for q in all_worsts if q["categoryName"] == selected_cat_filter]
+                filtered_worsts = sorted(filtered_worsts, key=lambda x: x["wrong_count"], reverse=True)
+                
+                if filtered_worsts:
+                    for idx, wq in enumerate(filtered_worsts[:15], 1):
+                        stem_text = strip_difficulty_marker(wq["stem"] or '')
+                        stem_preview = (stem_text[:70] + '...') if len(stem_text) > 70 else stem_text
                         
-                        img = image_path_for(wq.get("imagePath"))
-                        if img:
-                            st.image(str(img), use_container_width=True)
+                        with st.expander(f"[{wq['categoryName']}] 오답 {wq['wrong_count']}회 (총 풀이 {wq['total_solved']}회) - {stem_preview}"):
+                            st.markdown(f"**[전체 지문]**\n\n{wq['stem']}")
                             
-                        choices = parse_choices(wq["choicesJson"])
-                        for ci, ctext in enumerate(choices):
-                            if ci == int(wq["answerIndex"]):
-                                st.markdown(f"<div style='background:rgba(46,196,182,0.15);padding:0.4rem;border-radius:0.4rem;margin-bottom:0.2rem;'><b>{ci+1}. {html.escape(ctext)} (정답)</b></div>", unsafe_allow_html=True)
-                            else:
-                                st.markdown(f"<div style='padding:0.4rem;margin-bottom:0.2rem;'>{ci+1}. {html.escape(ctext)}</div>", unsafe_allow_html=True)
+                            img = image_path_for(wq.get("imagePath"))
+                            if img:
+                                st.image(str(img), use_container_width=True)
                                 
-                        if wq.get("explanation"):
-                            st.markdown(f"<div style='background:#f4f7fb;padding:0.6rem;border-radius:0.5rem;margin-top:0.5rem;'><p style='font-weight:700;margin:0 0 0.2rem;color:#0b2a4a;'>해설</p>{html.escape(wq['explanation'])}</div>", unsafe_allow_html=True)
-                        if wq.get("source"):
-                            st.caption(f"출처: {wq['source']}")
+                            choices = parse_choices(wq["choicesJson"])
+                            for ci, ctext in enumerate(choices):
+                                if ci == int(wq["answerIndex"]):
+                                    st.markdown(f"<div style='background:rgba(46,196,182,0.15);padding:0.4rem;border-radius:0.4rem;margin-bottom:0.2rem;'><b>{ci+1}. {html.escape(ctext)} (정답)</b></div>", unsafe_allow_html=True)
+                                else:
+                                    st.markdown(f"<div style='padding:0.4rem;margin-bottom:0.2rem;'>{ci+1}. {html.escape(ctext)}</div>", unsafe_allow_html=True)
+                                    
+                            if wq.get("explanation"):
+                                st.markdown(f"<div style='background:#f4f7fb;padding:0.6rem;border-radius:0.5rem;margin-top:0.5rem;'><p style='font-weight:700;margin:0 0 0.2rem;color:#0b2a4a;'>해설</p>{html.escape(wq['explanation'])}</div>", unsafe_allow_html=True)
+                            if wq.get("source"):
+                                st.caption(f"출처: {wq['source']}")
+                else:
+                    st.markdown('<p style="font-size:0.85rem;color:#5b6b7c;padding-top:0.4rem;">선택한 과목에 해당하는 오답 기록이 없습니다.</p>', unsafe_allow_html=True)
             else:
-                st.markdown('<p style="font-size:0.85rem;color:#5b6b7c;">선택한 과목에 해당하는 오답 기록이 없습니다.</p>', unsafe_allow_html=True)
+                st.markdown('<p style="font-size:0.85rem;color:#5b6b7c;padding-top:0.4rem;">상단의 셀렉트박스에서 과목을 선택하시면 해당 과목의 오답 문항 분석이 표시됩니다.</p>', unsafe_allow_html=True)
         else:
             st.markdown('<p style="font-size:0.85rem;color:#5b6b7c;">아직 집계된 오답 문제 데이터가 없습니다.</p>', unsafe_allow_html=True)
 
