@@ -50,14 +50,9 @@ login_user = _master_login_user
 
 import lib.exam as _lib_exam   # noqa: E402
 
-# 기존 시험 및 시간 방어 코드 (완전 무결점 버전)
 if not hasattr(_lib_exam, "_orig_is_time_expired"):
     _lib_exam._orig_is_time_expired = _lib_exam.is_time_expired
     _lib_exam._orig_attempt_ends_at = _lib_exam.attempt_ends_at
-    
-    # 원래의 start_exam 함수 저장
-    if hasattr(_lib_exam, "start_exam"):
-        _lib_exam._orig_start_exam = _lib_exam.start_exam
 
     def _safe_is_time_expired(attempt):
         try:
@@ -76,28 +71,8 @@ if not hasattr(_lib_exam, "_orig_is_time_expired"):
             pass
         return _lib_exam._orig_attempt_ends_at(attempt)
 
-    # 파라미터 에러 원천 차단: *args, **kwargs 로 모든 인자 흡수
-    def _safe_start_exam_wrapper(*args, **kwargs):
-        try:
-            return _lib_exam._orig_start_exam(*args, **kwargs)
-        except Exception as e:
-            # DB IntegrityError (고유값 충돌) 발생 시: 기존 진행중(active) 시험 강제 삭제 후 재시도
-            if "IntegrityError" in type(e).__name__ or "IntegrityError" in str(e):
-                try:
-                    from lib.db import execute
-                    uid = args[0] if len(args) > 0 else kwargs.get("user_id")
-                    if not uid and "user_id" in kwargs:
-                        uid = kwargs["user_id"]
-                    if uid:
-                        execute("DELETE FROM Attempt WHERE userId = ? AND status = 'active'", (uid,))
-                        return _lib_exam._orig_start_exam(*args, **kwargs)
-                except Exception as inner_e:
-                    return None, f"기존 시험 세션 초기화 실패: {inner_e}"
-            return None, f"시험 시작 오류: {e}"
-
     _lib_exam.is_time_expired = _safe_is_time_expired
     _lib_exam.attempt_ends_at = _safe_attempt_ends_at
-    _lib_exam.start_exam = _safe_start_exam_wrapper
 
 from lib.exam import (  # noqa: E402
     attempt_ends_at,
@@ -716,7 +691,7 @@ def view_mail_setup():
             Streamlit Cloud **Secrets** 또는 환경변수에 메일 설정을 넣어 주세요.
 
             - `EMAILJS_SERVICE_ID`, `EMAILJS_TEMPLATE_ID`, `EMAILJS_PUBLIC_KEY`, `EMAILJS_PRIVATE_KEY`
-            - または `MAIL_USER`, `MAIL_PASS` (필요 시 `MAIL_HOST`, `MAIL_PORT`)
+            - 또는 `MAIL_USER`, `MAIL_PASS` (필요 시 `MAIL_HOST`, `MAIL_PORT`)
             """
         )
         if st.button("로그인으로", type="secondary"):
@@ -725,43 +700,44 @@ def view_mail_setup():
     auth_layout("메일 설정 안내", "이메일 발송 설정이 필요할 때 참고하세요.", body)
 
 
-# ---------- [오류 완벽 제거: sqlite3.Row 속성 에러 방어] ----------
+# ---------- 마스터 통계 집계 함수 (개별 문항 정밀 분석 추가) ----------
 def get_master_statistics():
     from lib.db import fetch_all
     try:
+        total_users = fetch_all("SELECT COUNT(*) as cnt FROM User")[0]["cnt"]
         total_attempts = fetch_all("SELECT COUNT(*) as cnt FROM Attempt WHERE status = 'submitted'")[0]["cnt"]
         
-        # 순정 함수 기반 안전한 카테고리별 집계
-        questions = fetch_all("""
-            SELECT q.id, q.categoryId, aq.isCorrect
+        # 1. 14개 과목별 전체 풀이/오답 현황 요약
+        category_stats = fetch_all("""
+            SELECT q.categoryName, 
+                   COUNT(aq.id) as total_solved,
+                   SUM(CASE WHEN aq.isCorrect = 0 THEN 1 ELSE 0 END) as wrong_count
             FROM AttemptQuestion aq
             JOIN Question q ON aq.questionId = q.id
+            GROUP BY q.categoryName
+            ORDER BY q.categoryName ASC
         """)
         
-        cats = topic_categories()
-        cat_map = {c["id"]: c["name"] for c in cats}
+        # 2. 모든 문항별 상세 오답 분석 (과목별로 가장 많이 틀린 문제 추적용)
+        detailed_wrong_stats = fetch_all("""
+            SELECT q.categoryName, q.stem, 
+                   SUM(CASE WHEN aq.isCorrect = 0 THEN 1 ELSE 0 END) as wrong_count,
+                   COUNT(aq.id) as total_solved
+            FROM AttemptQuestion aq
+            JOIN Question q ON aq.questionId = q.id
+            GROUP BY q.id
+            HAVING wrong_count > 0
+            ORDER BY q.categoryName ASC, wrong_count DESC
+        """)
         
-        stats_dict = {}
-        for c in cats:
-            stats_dict[c["name"]] = {"total_solved": 0, "wrong_count": 0}
-            
-        for q in questions:
-            # sqlite3.Row는 .get() 메서드가 없으므로 배열처럼 접근합니다.
-            cat_id = q["categoryId"]
-            is_correct = q["isCorrect"]
-            
-            c_name = cat_map.get(cat_id, "기타 과목")
-            
-            if c_name not in stats_dict:
-                stats_dict[c_name] = {"total_solved": 0, "wrong_count": 0}
-            stats_dict[c_name]["total_solved"] += 1
-            if is_correct == 0:
-                stats_dict[c_name]["wrong_count"] += 1
-                
-        category_stats = [
-            {"categoryName": k, "total_solved": v["total_solved"], "wrong_count": v["wrong_count"]}
-            for k, v in stats_dict.items() if v["total_solved"] > 0
-        ]
+        # Python에서 과목별로 묶어서 가장 많이 틀린 문제 Top 3만 필터링
+        grouped_wrong_stats = {}
+        for row in detailed_wrong_stats:
+            cat = row['categoryName']
+            if cat not in grouped_wrong_stats:
+                grouped_wrong_stats[cat] = []
+            if len(grouped_wrong_stats[cat]) < 3:
+                grouped_wrong_stats[cat].append(row)
         
         recent_all_users = fetch_all("""
             SELECT u.name, u.email, a.kind, a.score, a.totalCount, a.submittedAt
@@ -773,12 +749,14 @@ def get_master_statistics():
         """)
         
         return {
+            "total_users": total_users,
             "total_attempts": total_attempts,
             "category_stats": category_stats,
+            "grouped_wrong_stats": grouped_wrong_stats,
             "recent_all_users": recent_all_users
         }
-    except Exception as e:
-        return {"error": str(e)}
+    except Exception:
+        return None
 
 
 # ---------- App views ----------
@@ -1577,11 +1555,6 @@ def view_dashboard():
     with greet_r:
         if st.button("로그아웃", type="secondary", key="dash_logout"):
             logout()
-            
-    if user["email"] == "trustkimjs@police.go.kr":
-        if st.button("👑 마스터 관리자 전용 통계 분석 보기", type="primary", use_container_width=True, key="dash_to_stats"):
-            go("stats")
-
     active = get_active_attempt(user["id"])
     if active:
         res_l, res_r = st.columns([1, 0.2], gap="small")
@@ -1686,72 +1659,83 @@ def view_dashboard():
                 if st.button("결과", key=f"recent_{item['id']}", use_container_width=True):
                     go("result", attempt_id=item["id"])
 
+    # =====================================================================
+    # [마스터 전용 통계 분석 섹션] (14개 과목 전체 통계 & 취약 문제 정밀 분석)
+    # =====================================================================
+    if user["email"] == "trustkimjs@police.go.kr":
+        st.markdown("<hr style='margin: 2.5rem 0; border: 1px solid #c9a227;'>", unsafe_allow_html=True)
+        st.markdown('<p style="font-size:1.3rem;font-weight:900;color:#0b2a4a;margin-bottom:1rem;">👑 마스터 관리자 전용 통계 분석</p>', unsafe_allow_html=True)
+        
+        stats = get_master_statistics()
+        if stats:
+            col1, col2 = st.columns(2, gap="small")
+            with col1:
+                st.markdown(f'<div style="background:#fff;border:1px solid #d7e0ea;border-radius:0.6rem;padding:0.8rem;text-align:center;"><p style="font-size:0.85rem;color:#5b6b7c;margin:0;">총 가입 회원</p><p style="font-size:1.4rem;font-weight:900;color:#132238;margin:0;">{stats["total_users"]}명</p></div>', unsafe_allow_html=True)
+            with col2:
+                st.markdown(f'<div style="background:#fff;border:1px solid #d7e0ea;border-radius:0.6rem;padding:0.8rem;text-align:center;"><p style="font-size:0.85rem;color:#5b6b7c;margin:0;">누적 완료 시험</p><p style="font-size:1.4rem;font-weight:900;color:#132238;margin:0;">{stats["total_attempts"]}건</p></div>', unsafe_allow_html=True)
+            
+            st.markdown("<div style='height:1.5rem;'></div>", unsafe_allow_html=True)
+            st.markdown('<p style="font-weight:800;font-size:1.1rem;color:#0b2a4a;margin-bottom:0.5rem;">📊 과목별 전체 풀이 현황 요약</p>', unsafe_allow_html=True)
+            
+            if stats["category_stats"]:
+                for cat in stats["category_stats"]:
+                    solved = cat['total_solved'] or 0
+                    wrong = cat['wrong_count'] or 0
+                    wrong_pct = round((wrong / solved * 100), 1) if solved > 0 else 0
+                    st.markdown(
+                        f"""
+                        <div style="background:#fff;border:1px solid #d7e0ea;border-radius:0.6rem;padding:0.7rem 1rem;margin-bottom:0.4rem;display:flex;justify-content:space-between;align-items:center;">
+                          <div><b style="color:#132238;font-size:0.9rem;">{html.escape(str(cat['categoryName']))}</b><br><span style="color:#5b6b7c;font-size:0.8rem;">총 풀이: {solved}회 · 오답: {wrong}회</span></div>
+                          <div style="text-align:right;font-weight:800;color:#e63946;font-size:0.95rem;">오답률 {wrong_pct}%</div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+            else:
+                st.markdown('<p style="font-size:0.85rem;color:#5b6b7c;">아직 집계된 과목별 데이터가 없습니다.</p>', unsafe_allow_html=True)
+            
+            st.markdown("<div style='height:1.5rem;'></div>", unsafe_allow_html=True)
+            st.markdown('<p style="font-weight:800;font-size:1.1rem;color:#e63946;margin-bottom:0.5rem;">⚠️ 과목별 취약 문제 분석 (오답률 높은 순)</p>', unsafe_allow_html=True)
+            
+            if stats["grouped_wrong_stats"]:
+                for cat_name, questions in stats["grouped_wrong_stats"].items():
+                    st.markdown(f'<p style="font-weight:700;font-size:0.95rem;color:#132238;margin:1rem 0 0.4rem;">[{html.escape(str(cat_name))}]</p>', unsafe_allow_html=True)
+                    for idx, row in enumerate(questions, 1):
+                        stem_preview = (row['stem'][:60] + '...') if row['stem'] and len(row['stem']) > 60 else (row['stem'] or '')
+                        solved_q = row['total_solved'] or 0
+                        wrong_q = row['wrong_count'] or 0
+                        q_err_rate = round((wrong_q / solved_q * 100), 1) if solved_q > 0 else 0
+                        
+                        st.markdown(
+                            f"""
+                            <div style="background:#fffcfc;border-left:4px solid #e63946;border-top:1px solid #d7e0ea;border-right:1px solid #d7e0ea;border-bottom:1px solid #d7e0ea;border-radius:0.4rem;padding:0.7rem 0.9rem;margin-bottom:0.5rem;">
+                              <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:0.3rem;">
+                                <span style="font-size:0.8rem;font-weight:700;color:#e63946;">Top {idx} 오답문제</span>
+                                <span style="font-size:0.75rem;color:#5b6b7c;font-weight:600;">풀이 {solved_q}회 / 오답 {wrong_q}회 (오답률 {q_err_rate}%)</span>
+                              </div>
+                              <div style="font-size:0.85rem;color:#333;line-height:1.4;">{html.escape(stem_preview)}</div>
+                            </div>
+                            """,
+                            unsafe_allow_html=True
+                        )
+            else:
+                st.markdown('<p style="font-size:0.85rem;color:#5b6b7c;">아직 집계된 오답 데이터가 없습니다.</p>', unsafe_allow_html=True)
 
-def view_stats():
-    user = require_user()
-    if user["email"] != "trustkimjs@police.go.kr":
-        go("dashboard")
-        return
-        
-    app_shell_css()
-    
-    st.markdown(
-        """
-        <p class="damoa-brand">지역 경찰 실무 역량 평가 다통과</p>
-        <p class="damoa-title">👑 마스터 관리자 전용 통계 분석</p>
-        """,
-        unsafe_allow_html=True,
-    )
-    
-    if st.button("← 홈으로 돌아가기", type="secondary", use_container_width=True, key="stats_home"):
-        go("dashboard")
-        
-    stats = get_master_statistics()
-    if not stats or "error" in stats:
-        st.error(f"통계 데이터를 불러오지 못했습니다: {stats.get('error', 'Unknown')}")
-        return
-
-    st.markdown(f'<div style="background:#f4f7fb;border:1px solid #d7e0ea;border-radius:0.6rem;padding:0.9rem;text-align:center;margin:1rem 0;"><p style="font-size:0.85rem;color:#5b6b7c;margin:0;">누적 완료 시험</p><p style="font-size:1.4rem;font-weight:800;color:#0b2a4a;margin:0;">{stats["total_attempts"]}건</p></div>', unsafe_allow_html=True)
-    
-    st.markdown("<div style='height:0.5rem;'></div>", unsafe_allow_html=True)
-    st.markdown('<p style="font-weight:700;font-size:1rem;color:#0b2a4a;">📚 14개 과목(주제)별 전체 풀이 및 오답 현황</p>', unsafe_allow_html=True)
-    
-    cat_list = stats.get("category_stats", [])
-    if cat_list:
-        for cat in cat_list:
-            cat_name = cat.get('categoryName') or "기타 과목"
-            solved = cat.get('total_solved', 0) or 0
-            wrong = cat.get('wrong_count', 0) or 0
-            wrong_pct = round((wrong / solved * 100), 1) if solved > 0 else 0
-            st.markdown(
-                f"""
-                <div style="background:#fff;border:1px solid #d7e0ea;border-radius:0.6rem;padding:0.7rem 1rem;margin-bottom:0.4rem;display:flex;justify-content:space-between;align-items:center;font-size:0.85rem;">
-                  <div><b>{html.escape(str(cat_name))}</b><br><span style="color:#5b6b7c;font-size:0.75rem;">총 풀이: {solved}회 · 오답: {wrong}회</span></div>
-                  <div style="text-align:right;font-weight:700;color:#e63946;">오답률 {wrong_pct}%</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-    else:
-        st.info("아직 집계된 과목별 풀이 데이터가 없습니다.")
-        
-    st.markdown("<div style='height:1rem;'></div>", unsafe_allow_html=True)
-    st.markdown('<p style="font-weight:700;font-size:1rem;color:#0b2a4a;">👥 다른 사용자들의 최근 시험 응시 내역</p>', unsafe_allow_html=True)
-    
-    recent_list = stats.get("recent_all_users", [])
-    if recent_list:
-        for row in recent_list:
-            st.markdown(
-                f"""
-                <div style="background:#f4f7fb;border:1px solid #d7e0ea;border-radius:0.5rem;padding:0.6rem;margin-bottom:0.3rem;font-size:0.8rem;display:flex;justify-content:space-between;align-items:center;">
-                  <div><b>{html.escape(str(row['name']))}</b> ({html.escape(str(row['email']))})<br><span style="color:#5b6b7c;">유형: {row['kind']}</span></div>
-                  <div style="text-align:right;font-weight:700;color:#0b2a4a;">{row['score']}/{row['totalCount']}점</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-    else:
-        st.info("다른 사용자의 응시 내역이 없습니다.")
+            st.markdown("<div style='height:1.5rem;'></div>", unsafe_allow_html=True)
+            st.markdown('<p style="font-weight:800;font-size:1.1rem;color:#0b2a4a;margin-bottom:0.5rem;">👥 최근 시험 응시자 내역 (실시간)</p>', unsafe_allow_html=True)
+            if stats["recent_all_users"]:
+                for row in stats["recent_all_users"]:
+                    st.markdown(
+                        f"""
+                        <div style="background:#f4f7fb;border:1px solid #d7e0ea;border-radius:0.5rem;padding:0.6rem 0.9rem;margin-bottom:0.4rem;display:flex;justify-content:space-between;align-items:center;">
+                          <div><b style="color:#132238;font-size:0.85rem;">{html.escape(str(row['name']))}</b> <span style="font-size:0.75rem;color:#5b6b7c;">({html.escape(str(row['email']))})</span><br><span style="color:#5b6b7c;font-size:0.75rem;font-weight:600;">유형: {row['kind']}</span></div>
+                          <div style="text-align:right;font-weight:800;color:#0b2a4a;font-size:0.95rem;">{row['score']}/{row['totalCount']}점</div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+            else:
+                st.markdown('<p style="font-size:0.85rem;color:#5b6b7c;">응시 내역이 없습니다.</p>', unsafe_allow_html=True)
 
 
 def view_topics():
@@ -2073,6 +2057,7 @@ def view_result():
     app_shell_css()
     attempt_id = st.session_state.attempt_id
     
+    # [안전 장치] 결과 화면 진입 시 제출 상태가 아니면 강제로 제출 확정 처리
     try:
         att_check, _ = load_exam(attempt_id, user["id"])
         if att_check and att_check["status"] != "submitted":
@@ -2311,7 +2296,6 @@ def main():
         "topics": view_topics,
         "exam": view_exam,
         "result": view_result,
-        "stats": view_stats,
     }
     routes.get(view, view_login)()
         
