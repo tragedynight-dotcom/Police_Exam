@@ -1439,7 +1439,7 @@ def app_shell_css():
                 }, true);
             }
 
-            # 하단 3버튼 가로 1줄 고정 강제 적용 (오리지널 코드 유지)
+            // 하단 3버튼 가로 1줄 고정 강제 적용 (오리지널 코드 유지)
             setInterval(function() {
                 var marks = doc.querySelectorAll('.exam-nav-side-mark, .result-actions-mark');
                 marks.forEach(function(mark) {
