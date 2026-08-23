@@ -701,7 +701,7 @@ def view_mail_setup():
     auth_layout("메일 설정 안내", "이메일 발송 설정이 필요할 때 참고하세요.", body)
 
 
-# ---------- [모의고사 과목별 중복 방지 및 지문 기준 누적 통계 집계 함수] ----------
+# ---------- [모의고사 과목별 중복 방지 및 정확한 정오답 집계 통계 함수] ----------
 def get_master_statistics():
     from lib.db import fetch_all
     try:
@@ -728,8 +728,8 @@ def get_master_statistics():
             try:
                 _, questions = load_exam(att_id, user_id)
                 
-                # 모의고사 1회당 과목별 풀이 건수가 중복 카운트되지 않도록 세트 관리
                 counted_cats_in_this_attempt = set()
+                wrong_cats_in_this_attempt = set()
                 
                 for q in questions:
                     cat_name = q.get("categoryName") or "기타"
@@ -743,10 +743,13 @@ def get_master_statistics():
                         if cat_name not in counted_cats_in_this_attempt:
                             counted_cats_in_this_attempt.add(cat_name)
                             cat_target[cat_name]["total"] += 1
+                        # 숫자형 불리언(0/1 또는 False) 판정 오류 해결을 위한 엄격한 오답 확인
+                        if is_correct is not None and int(is_correct) == 0:
+                            wrong_cats_in_this_attempt.add(cat_name)
                     else:
                         if is_correct is not None:
                             cat_target[cat_name]["total"] += 1
-                            if not is_correct:
+                            if int(is_correct) == 0:
                                 cat_target[cat_name]["wrong"] += 1
                                 
                     stem_text = q.get("stem", "").strip()
@@ -766,17 +769,11 @@ def get_master_statistics():
                             }
                         if is_correct is not None:
                             question_data[stem_text]["total_solved"] += 1
-                            if not is_correct:
+                            if int(is_correct) == 0:
                                 question_data[stem_text]["wrong_count"] += 1
                                 
-                # 모의고사에서 과목별 오답 체크 (모의고사 1회 내에서 해당 과목을 틀렸다면 오답 1회 반영)
                 if kind == "mock":
-                    mock_cat_wrong_check = {}
-                    for q in questions:
-                        c_name = q.get("categoryName") or "기타"
-                        if q.get("isCorrect") is False:
-                            mock_cat_wrong_check[c_name] = True
-                    for c_name in mock_cat_wrong_check:
+                    for c_name in wrong_cats_in_this_attempt:
                         if c_name in category_data_mock:
                             category_data_mock[c_name]["wrong"] += 1
 
@@ -785,7 +782,7 @@ def get_master_statistics():
                 
         def make_cat_stats(c_dict):
             res = []
-            for name in sorted(c_dict.keys()):
+            for name in sorted(c_dict.keys(), key=lambda s: int(re.match(r"^(\d+)", s).group(1)) if re.match(r"^(\d+)", s) else 999):
                 res.append({
                     "categoryName": name,
                     "total_solved": c_dict[name]["total"],
