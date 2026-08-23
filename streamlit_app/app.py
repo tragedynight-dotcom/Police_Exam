@@ -700,7 +700,7 @@ def view_mail_setup():
     auth_layout("메일 설정 안내", "이메일 발송 설정이 필요할 때 참고하세요.", body)
 
 
-# ---------- [100% 안전한 파이썬 기반 통계 집계 함수] ----------
+# ---------- [100% 안전한 파이썬 기반 통계 집계 함수 (오답 빈도수 내림차순 정렬 포함)] ----------
 def get_master_statistics():
     from lib.db import fetch_all
     try:
@@ -756,6 +756,7 @@ def get_master_statistics():
                 "wrong_count": category_data[cat_name]["wrong"]
             })
             
+        # 오답 횟수 많은 순(내림차순)으로 완벽하게 정렬
         all_worst_questions = sorted(
             [q for q in question_data.values() if q["wrong_count"] > 0],
             key=lambda x: x["wrong_count"],
@@ -1684,7 +1685,7 @@ def view_dashboard():
 
 
 # =====================================================================
-# [마스터 전용 통계 분석 새 페이지 뷰] (과목별 필터 및 클릭 시 상세 보기 구현)
+# [마스터 전용 통계 분석 새 페이지 뷰] (오답 빈도수 기준 내림차순 정렬 및 카테고리 필터 적용)
 # =====================================================================
 def view_master_stats():
     user = require_user()
@@ -1743,16 +1744,17 @@ def view_master_stats():
 
         st.markdown("<div style='height:1rem;'></div>", unsafe_allow_html=True)
 
-        # 수험생들이 가장 많이 틀린 구체적인 문항 분석 (과목별 필터 및 클릭 시 상세 보기)
-        st.markdown('<p style="font-weight:700;font-size:1.05rem;color:#e63946;">⚠️ 과목별 최다 오답 문항 분석 및 상세 보기</p>', unsafe_allow_html=True)
+        # 수험생들이 가장 많이 틀린 구체적인 문항 분석 (오답 빈도수 내림차순 정렬 및 과목별 선택 기능)
+        st.markdown('<p style="font-weight:700;font-size:1.05rem;color:#e63946;">⚠️ 과목별 최다 오답 문항 분석 및 상세 보기 (오답 많은 순)</p>', unsafe_allow_html=True)
         
         all_worsts = stats.get("all_worst_questions", [])
         if all_worsts:
-            # 과목 목록 추출
             available_cats = sorted(list(set(q["categoryName"] for q in all_worsts)))
             selected_cat_filter = st.selectbox("과목(종류)별 선택", options=["전체보기"] + available_cats, key="worst_q_cat_filter")
             
             filtered_worsts = all_worsts if selected_cat_filter == "전체보기" else [q for q in all_worsts if q["categoryName"] == selected_cat_filter]
+            # 오답 횟수가 많은 순으로 한 번 더 확실하게 정렬 보장
+            filtered_worsts = sorted(filtered_worsts, key=lambda x: x["wrong_count"], reverse=True)
             
             if filtered_worsts:
                 for idx, wq in enumerate(filtered_worsts[:15], 1):
