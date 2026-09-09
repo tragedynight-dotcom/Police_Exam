@@ -219,8 +219,8 @@ def start_exam(
         return existing["id"], None
 
     if existing and force_new:
-        # 삭제하지 않고 제출 처리해 대시보드 '최근 학습 현황'에 남긴다.
-        submit_exam(existing["id"], user_id)
+        # 제출하지 않은 응시는 통계·최근 기록에 넣지 않는다.
+        abandon_exam(existing["id"], user_id)
 
     selected: list[dict] = []
 
@@ -283,7 +283,7 @@ def start_exam(
         if kind == "all":
             selected = shuffle(all_q)
         elif kind == "topic":
-            selected = all_q if reveal_mode == "immediate" else shuffle(all_q)
+            selected = shuffle(all_q)
         else:
             selected = pick_balanced_by_category(all_q, EXAM_QUESTION_COUNT)
             if len(selected) < min(EXAM_QUESTION_COUNT, len(all_q)):
@@ -389,6 +389,17 @@ def save_answer(
             "source": aq["source"],
         }
     return True, "저장됨", feedback
+
+
+def abandon_exam(attempt_id: str, user_id: str) -> None:
+    execute(
+        """
+        UPDATE Attempt
+        SET status = 'abandoned'
+        WHERE id = ? AND userId = ? AND status = 'in_progress'
+        """,
+        (attempt_id, user_id),
+    )
 
 
 def submit_exam(attempt_id: str, user_id: str) -> tuple[bool, str]:
