@@ -361,6 +361,7 @@ def flush_scroll_top():
             <!-- scroll:{nonce} -->
             <script>
             (function () {{
+              try {{ window.parent.sessionStorage.removeItem('__datonggwa_exam_scroll'); }} catch (e) {{}}
               const doc = window.parent.document;
               const sel = {sel_js};
               const block = {block_js};
@@ -388,6 +389,7 @@ def flush_scroll_top():
         <!-- scroll-top:{nonce} -->
         <script>
         (function () {{
+          try {{ window.parent.sessionStorage.removeItem('__datonggwa_exam_scroll'); }} catch (e) {{}}
           const doc = window.parent.document;
           const win = window.parent;
           function toTop() {{
@@ -796,6 +798,22 @@ def app_shell_css():
             width: 100% !important;
             scrollbar-width: none !important;
             -ms-overflow-style: none !important;
+            overflow-anchor: none !important;
+          }
+          [data-testid='stCustomComponentV1'],
+          iframe[height='0'] {
+            position: fixed !important;
+            width: 0 !important;
+            height: 0 !important;
+            min-height: 0 !important;
+            overflow: hidden !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            border: 0 !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
+            left: 0 !important;
+            top: 0 !important;
           }
           [data-testid='stMain']::-webkit-scrollbar {
             width: 0 !important;
@@ -1617,10 +1635,70 @@ def inject_choice_sfx() -> None:
                 t.closest('label') ||
                 (t.tagName === 'INPUT' && t.type === 'radio'));
             }
+            var SCROLL_KEY = '__datonggwa_exam_scroll';
+            function scrollTargets() {
+              var doc = document;
+              var out = [];
+              function add(el, name) {
+                if (!el) return;
+                out.push({ name: name, top: el.scrollTop || 0 });
+              }
+              add(doc.scrollingElement, 'se');
+              add(doc.documentElement, 'html');
+              add(doc.body, 'body');
+              add(doc.querySelector('[data-testid="stMain"]'), 'stMain');
+              add(doc.querySelector('[data-testid="stAppViewContainer"]'), 'stApp');
+              add(doc.querySelector('[data-testid="stMainBlockContainer"]'), 'stBlock');
+              out.push({ name: 'win', top: window.scrollY || 0 });
+              return out;
+            }
+            function saveExamScroll() {
+              if (!document.querySelector('.exam-question-anchor')) return;
+              try {
+                sessionStorage.setItem(SCROLL_KEY, JSON.stringify({ t: Date.now(), snaps: scrollTargets() }));
+              } catch (err) {}
+            }
+            function restoreExamScroll() {
+              var raw;
+              try { raw = sessionStorage.getItem(SCROLL_KEY); } catch (err) { return; }
+              if (!raw) return;
+              var data;
+              try { data = JSON.parse(raw); } catch (err) { return; }
+              if (!data || !data.snaps || Date.now() - data.t > 2500) return;
+              if (!document.querySelector('.exam-question-anchor')) return;
+              var map = {};
+              data.snaps.forEach(function(it) { map[it.name] = it.top; });
+              function set(el, name) {
+                if (!el || map[name] == null) return;
+                try { el.scrollTop = map[name]; } catch (err) {}
+              }
+              var doc = document;
+              set(doc.scrollingElement, 'se');
+              set(doc.documentElement, 'html');
+              set(doc.body, 'body');
+              set(doc.querySelector('[data-testid="stMain"]'), 'stMain');
+              set(doc.querySelector('[data-testid="stAppViewContainer"]'), 'stApp');
+              set(doc.querySelector('[data-testid="stMainBlockContainer"]'), 'stBlock');
+              if (map.win) {
+                try { window.scrollTo(0, map.win); } catch (err) {}
+              }
+            }
             document.addEventListener('pointerdown', function(e) {
               init();
-              if (isChoice(e.target)) play();
+              if (isChoice(e.target)) {
+                saveExamScroll();
+                play();
+                [0, 40, 120, 240, 400, 700, 1100].forEach(function(ms) {
+                  setTimeout(restoreExamScroll, ms);
+                });
+              }
             }, true);
+            if (!window.__datonggwa_scroll_obs) {
+              window.__datonggwa_scroll_obs = true;
+              try {
+                new MutationObserver(restoreExamScroll).observe(document.documentElement, { childList: true, subtree: true });
+              } catch (err) {}
+            }
           };
 
           function inject(targetWin, targetDoc) {
@@ -2102,13 +2180,16 @@ def view_topics():
                             go("exam", attempt_id=aid, q_index=0, feedback=None)
 
 
-def view_exam():
+def _exam_rerun():
+    try:
+        st.rerun(scope="fragment")
+    except Exception:
+        st.rerun()
+
+
+def _exam_fragment(user):
     from datetime import datetime, timezone
 
-    user = require_user()
-    app_shell_css()
-    if st.session_state.pop("_play_sfx", False):
-        play_choice_beep()
     attempt_id = st.session_state.attempt_id
     attempt, questions = load_exam(attempt_id, user["id"])
     if not attempt:
@@ -2205,12 +2286,10 @@ def view_exam():
             st.session_state.feedback = feedback
             if is_learn:
                 request_scroll_to(".exam-feedback-anchor", block="center")
-            else:
-                if not is_last:
-                    st.session_state.q_index = idx + 1
-                    st.session_state.feedback = None
-                    request_scroll_to(".exam-question-anchor", block="start")
-            st.rerun()
+            elif not is_last:
+                st.session_state.q_index = idx + 1
+                st.session_state.feedback = None
+            _exam_rerun()
         else:
             st.error(msg)
 
@@ -2279,6 +2358,17 @@ def view_exam():
     with side_r:
         if st.button("홈으로", use_container_width=True, type="secondary", key="exam_home"):
             go("dashboard")
+
+
+if hasattr(st, "fragment"):
+    _exam_fragment = st.fragment(_exam_fragment)
+
+
+def view_exam():
+    user = require_user()
+    app_shell_css()
+    st.session_state.pop("_play_sfx", False)
+    _exam_fragment(user)
 
 
 def view_result():
