@@ -129,6 +129,21 @@ def set_auth_cookie(token: str | None):
     st.session_state._auth_cookie_sync = token if token else ""
 
 
+def _sync_auth_query(token: str | None) -> None:
+    """F5에도 남도록 주소에 auth를 유지한다. 홈페이지 iframe도 이 값을 읽는다."""
+    try:
+        current = str(st.query_params.get("auth") or "")
+        if token:
+            if current != token:
+                st.query_params["auth"] = token
+        elif "auth" in st.query_params:
+            del st.query_params["auth"]
+        if "_auth" in st.query_params:
+            del st.query_params["_auth"]
+    except Exception:
+        pass
+
+
 def _write_auth_storage(token: str) -> None:
     max_age = AUTH_COOKIE_DAYS * 24 * 60 * 60 if token else 0
     name = json.dumps(AUTH_COOKIE_NAME)
@@ -140,15 +155,21 @@ def _write_auth_storage(token: str) -> None:
           var name = {name};
           var token = {value};
           var maxAge = {max_age};
+          function cookieBits() {{
+            if (location.protocol === "https:") {{
+              return "; path=/; max-age=" + maxAge + "; SameSite=None; Secure";
+            }}
+            return "; path=/; max-age=" + maxAge + "; SameSite=Lax";
+          }}
           function apply(doc, win) {{
             if (!doc || !win) return;
             try {{
               if (token) {{
-                doc.cookie = name + "=" + encodeURIComponent(token)
-                  + "; path=/; max-age=" + maxAge + "; SameSite=Lax";
+                doc.cookie = name + "=" + encodeURIComponent(token) + cookieBits();
                 win.localStorage.setItem(name, token);
               }} else {{
                 doc.cookie = name + "=; path=/; max-age=0; SameSite=Lax";
+                doc.cookie = name + "=; path=/; max-age=0; SameSite=None; Secure";
                 win.localStorage.removeItem(name);
               }}
             }} catch (e) {{}}
@@ -156,6 +177,13 @@ def _write_auth_storage(token: str) -> None:
           apply(document, window);
           try {{ apply(window.parent.document, window.parent); }} catch (e) {{}}
           try {{ apply(window.top.document, window.top); }} catch (e) {{}}
+          try {{
+            var msg = token
+              ? {{ type: "DAMOA_LOGIN", token: token }}
+              : {{ type: "DAMOA_LOGOUT" }};
+            if (window.parent && window.parent !== window) window.parent.postMessage(msg, "*");
+            if (window.top && window.top !== window) window.top.postMessage(msg, "*");
+          }} catch (e) {{}}
         }})();
         </script>
         """,
@@ -173,19 +201,21 @@ def flush_auth_cookie():
 
 
 def _read_auth_token() -> str | None:
+    for key in ("auth", "a", "_auth"):
+        try:
+            token = str(st.query_params.get(key) or "").strip()
+        except Exception:
+            token = ""
+        if token:
+            return unquote(token)
     token = None
     try:
         token = st.context.cookies.get(AUTH_COOKIE_NAME)
     except Exception:
         token = None
     if token:
-        token = unquote(str(token)).strip()
-    if not token:
-        try:
-            token = str(st.query_params.get("_auth") or "").strip()
-        except Exception:
-            token = None
-    return token or None
+        return unquote(str(token)).strip()
+    return None
 
 
 def inject_auth_restore():
@@ -206,8 +236,8 @@ def inject_auth_restore():
           function go(loc) {{
             if (!loc) return false;
             var url = new URL(loc.href);
-            if (url.searchParams.get("_auth")) return true;
-            url.searchParams.set("_auth", token);
+            if (url.searchParams.get("auth")) return true;
+            url.searchParams.set("auth", token);
             loc.replace(url.toString());
             return true;
           }}
@@ -224,10 +254,10 @@ def inject_auth_restore():
 def restore_user_from_cookie():
     token = _read_auth_token()
 
-    # 로그아웃 직후: 이번 요청에 남은 옛 쿠키로 다시 로그인되지 않게 막는다.
     if st.session_state.get("_force_logout"):
         st.session_state.user = None
         _write_auth_storage("")
+        _sync_auth_query(None)
         if not user_id_from_auth_token(token):
             st.session_state._force_logout = False
         return
@@ -243,18 +273,16 @@ def restore_user_from_cookie():
     st.session_state.user = user
     if st.session_state.view in {"login", "register"}:
         st.session_state.view = "dashboard"
-    try:
-        if st.query_params.get("_auth"):
-            del st.query_params["_auth"]
-    except Exception:
-        pass
+    _sync_auth_query(token)
     set_auth_cookie(token)
 
 
 def login_success(user: dict, view: str = "dashboard", **kwargs):
     st.session_state._force_logout = False
     st.session_state.user = user
-    set_auth_cookie(make_auth_token(user["id"]))
+    token = make_auth_token(user["id"])
+    set_auth_cookie(token)
+    _sync_auth_query(token)
     go(view, **kwargs)
 
 
@@ -262,6 +290,7 @@ def logout():
     st.session_state.user = None
     st.session_state._force_logout = True
     set_auth_cookie(None)
+    _sync_auth_query(None)
     go("login")
 
 
@@ -1486,85 +1515,114 @@ def app_shell_css():
     inject_choice_sfx()
 
 
+def _choice_click_wav_b64() -> str:
+    cached = getattr(_choice_click_wav_b64, "_b64", None)
+    if cached:
+        return cached
+    import base64
+    import io
+    import math
+    import struct
+    import wave
+
+    buf = io.BytesIO()
+    rate = 22050
+    n = int(rate * 0.09)
+    with wave.open(buf, "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(rate)
+        frames = bytearray()
+        for i in range(n):
+            freq = 980 - 720 * (i / n)
+            env = 1.0 - (i / n)
+            sample = int(24000 * env * math.sin(2 * math.pi * freq * (i / rate)))
+            frames += struct.pack("<h", max(-32767, min(32767, sample)))
+        wav.writeframes(bytes(frames))
+    _choice_click_wav_b64._b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+    return _choice_click_wav_b64._b64
+
+
+def play_choice_beep() -> None:
+    wav = _choice_click_wav_b64()
+    components.html(
+        f"""
+        <audio id="datonggwa-beep" autoplay playsinline>
+          <source src="data:audio/wav;base64,{wav}" type="audio/wav">
+        </audio>
+        <script>
+        (function() {{
+          var a = document.getElementById("datonggwa-beep");
+          if (!a) return;
+          a.volume = 0.85;
+          var p = a.play();
+          if (p && p.catch) p.catch(function() {{}});
+        }})();
+        </script>
+        """,
+        height=0,
+        width=0,
+    )
+
+
 def inject_choice_sfx() -> None:
-    """보기 클릭 시 Web Audio로 짧은 톤을 냅니다. 외부 음원 없음."""
+    """보기 클릭 시 짧은 톤을 냅니다. 외부 음원 없음."""
     components.html(
         """
         <script>
         (function() {
-          var doc = document;
-          var win = window;
-          try {
-            if (window.parent && window.parent.document) {
-              doc = window.parent.document;
-              win = window.parent;
-            }
-          } catch (e) {}
-
-          function attach(targetDoc, targetWin) {
-            if (!targetDoc || !targetWin || targetWin.__datonggwa_sfx) return;
-            targetWin.__datonggwa_sfx = true;
+          var boot = function() {
+            if (window.__datonggwa_sfx) return;
+            window.__datonggwa_sfx = true;
             var actx = null;
-
-            function initAudio() {
-              if (!actx) {
-                var AudioCtx = targetWin.AudioContext || targetWin.webkitAudioContext;
-                if (AudioCtx) actx = new AudioCtx();
-              }
+            function init() {
+              var AC = window.AudioContext || window.webkitAudioContext;
+              if (!actx && AC) actx = new AC();
               if (actx && actx.state === 'suspended') actx.resume();
             }
-
-            function playClick() {
+            function play() {
               try {
-                initAudio();
+                init();
                 if (!actx) return;
-                var osc = actx.createOscillator();
-                var gain = actx.createGain();
-                osc.connect(gain);
-                gain.connect(actx.destination);
-                osc.type = 'sine';
-                osc.frequency.setValueAtTime(900, actx.currentTime);
-                osc.frequency.exponentialRampToValueAtTime(300, actx.currentTime + 0.08);
-                gain.gain.setValueAtTime(0.8, actx.currentTime);
-                gain.gain.exponentialRampToValueAtTime(0.01, actx.currentTime + 0.08);
-                osc.start(actx.currentTime);
-                osc.stop(actx.currentTime + 0.08);
+                var o = actx.createOscillator();
+                var g = actx.createGain();
+                o.connect(g);
+                g.connect(actx.destination);
+                o.type = 'triangle';
+                o.frequency.setValueAtTime(880, actx.currentTime);
+                o.frequency.exponentialRampToValueAtTime(240, actx.currentTime + 0.09);
+                g.gain.setValueAtTime(0.28, actx.currentTime);
+                g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.09);
+                o.start();
+                o.stop(actx.currentTime + 0.1);
               } catch (err) {}
             }
-
-            function stripHtmlTitles() {
-              targetDoc.querySelectorAll('[title]').forEach(function(el) {
-                var t = el.getAttribute('title') || '';
-                if (t.indexOf('<') !== -1 || t.indexOf('style=') !== -1) {
-                  el.removeAttribute('title');
-                }
-              });
-            }
-            stripHtmlTitles();
-            if (!targetWin.__datonggwa_title_obs) {
-              targetWin.__datonggwa_title_obs = new MutationObserver(stripHtmlTitles);
-              targetWin.__datonggwa_title_obs.observe(targetDoc.documentElement, {
-                childList: true,
-                subtree: true,
-                attributes: true,
-                attributeFilter: ['title']
-              });
-            }
-
-            targetDoc.addEventListener('touchstart', initAudio, { once: true, capture: true });
-            targetDoc.addEventListener('click', initAudio, { once: true, capture: true });
-            targetDoc.addEventListener('click', function(e) {
-              var t = e.target;
-              if (!t || !t.closest) return;
-              var isChoice = t.closest('[data-testid="stRadio"]') ||
+            function isChoice(t) {
+              if (!t || !t.closest) return false;
+              return !!(t.closest('[data-testid="stRadio"]') ||
+                t.closest('[data-baseweb="radio"]') ||
+                t.closest('[role="radiogroup"]') ||
+                t.closest('[role="radio"]') ||
                 t.closest('label') ||
-                (t.tagName === 'INPUT' && t.type === 'radio');
-              if (isChoice) playClick();
+                (t.tagName === 'INPUT' && t.type === 'radio'));
+            }
+            document.addEventListener('pointerdown', function(e) {
+              init();
+              if (isChoice(e.target)) play();
             }, true);
+          };
+
+          function inject(targetWin, targetDoc) {
+            if (!targetWin || !targetDoc || targetWin.__datonggwa_sfx_injected) return;
+            targetWin.__datonggwa_sfx_injected = true;
+            var s = targetDoc.createElement('script');
+            s.textContent = '(' + boot.toString() + ')()';
+            targetDoc.documentElement.appendChild(s);
           }
 
-          attach(document, window);
-          attach(doc, win);
+          try { inject(window.parent, window.parent.document); } catch (e) {}
+          try { inject(window.top, window.top.document); } catch (e) {}
+          boot();
         })();
         </script>
         """,
@@ -2038,6 +2096,8 @@ def view_exam():
 
     user = require_user()
     app_shell_css()
+    if st.session_state.pop("_play_sfx", False):
+        play_choice_beep()
     attempt_id = st.session_state.attempt_id
     attempt, questions = load_exam(attempt_id, user["id"])
     if not attempt:
@@ -2130,6 +2190,7 @@ def view_exam():
     if selected is not None and not locked and selected != current:
         ok, msg, feedback = save_answer(attempt_id, user["id"], q["id"], selected)
         if ok:
+            st.session_state._play_sfx = True
             st.session_state.feedback = feedback
             if is_learn:
                 request_scroll_to(".exam-feedback-anchor", block="center")
@@ -2442,8 +2503,10 @@ def main():
     flush_auth_cookie()
     restore_user_from_cookie()
     if st.session_state.get("user"):
+        token = make_auth_token(st.session_state.user["id"])
+        _sync_auth_query(token)
         if not st.session_state.get("_auth_persisted"):
-            set_auth_cookie(make_auth_token(st.session_state.user["id"]))
+            set_auth_cookie(token)
             flush_auth_cookie()
             st.session_state._auth_persisted = True
     elif not st.session_state.get("_force_logout"):
