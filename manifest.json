@@ -1,7 +1,7 @@
 {
-  "name": "지역경찰 실무역량평가 DaMoa",
-  "short_name": "실무역량평가DaMoa",
-  "start_url": "./",
+  "name": "지역경찰 실무역량평가 다통과",
+  "short_name": "실무역량평가다통과",
+  "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#0b2a4a",
