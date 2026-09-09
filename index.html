@@ -10,17 +10,11 @@
   <style>
     body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #ffffff; overscroll-behavior-y: contain; }
     iframe { width: 100%; height: 100%; border: none; }
-    #wake-bar { display: none; position: fixed; top: 0; left: 0; width: 100%; background: #0b2a4a; color: #fff; font-family: "Noto Sans KR", sans-serif; font-size: 0.9rem; padding: 10px 14px; box-sizing: border-box; z-index: 10000; align-items: center; justify-content: space-between; gap: 10px; }
-    #wake-bar button { background: #c9a227; color: #071c33; border: 0; border-radius: 8px; font-weight: 800; padding: 8px 12px; }
     #inapp-guide { display: none; position: fixed; bottom: 0; left: 0; width: 100%; background-color: #e63946; color: #ffffff; text-align: center; padding: 16px 20px; box-sizing: border-box; font-family: "Noto Sans KR", sans-serif; font-size: 0.95rem; line-height: 1.5; z-index: 9999; box-shadow: 0 -4px 12px rgba(0,0,0,0.2); }
     #inapp-guide b { color: #fde047; font-weight: 800; }
   </style>
 </head>
 <body>
-  <div id="wake-bar">
-    <span>화면이 안 뜨면 클라우드가 잠든 상태입니다. GitHub에 들어가지 말고 깨우기를 누르세요.</span>
-    <button type="button" id="wake-btn">앱 깨우기</button>
-  </div>
   <iframe id="app-iframe" allow="clipboard-write; camera; geolocation; fullscreen"></iframe>
   <div id="inapp-guide">현재 네이버/카카오 앱에서는 단독 앱 설치가 제한됩니다.<br>우측 하단 메뉴(≡)에서 <b>'다른 브라우저로 열기'</b> 또는 <b>'홈 화면에 추가'</b>를 선택하여 사용해 주시기 바랍니다.</div>
 
@@ -58,20 +52,7 @@
       if (iframe) iframe.src = buildTargetUrl();
     }
 
-    function wakeApp() {
-      window.open(STREAMLIT_URL, "_blank");
-      setTimeout(loadApp, 4000);
-      setTimeout(loadApp, 12000);
-    }
-
-    document.getElementById('wake-btn').addEventListener('click', wakeApp);
     loadApp();
-    setTimeout(function() {
-      var bar = document.getElementById('wake-bar');
-      bar.style.display = 'flex';
-      document.getElementById('app-iframe').style.height = 'calc(100% - 52px)';
-      document.getElementById('app-iframe').style.marginTop = '52px';
-    }, 8000);
 
     var ua = navigator.userAgent.toLowerCase();
     if(ua.indexOf('naver') > -1 || ua.indexOf('kakaotalk') > -1 || ua.indexOf('line') > -1) {
