@@ -1776,6 +1776,14 @@ def _render_category_stats(rows: list[dict], empty_text: str) -> None:
 
 def view_stats():
     user = require_user()
+    if st.session_state.pop("_do_stats_reset", False):
+        pw = st.session_state.pop("_stats_reset_pw_val", "")
+        if can_reset_stats(pw):
+            reset_learning_stats()
+            st.session_state.attempt_id = None
+            st.session_state._stats_reset_ok = True
+        else:
+            st.session_state._stats_reset_err = True
     app_shell_css()
     master = is_master_user(user)
     if "stats_scope" not in st.session_state:
@@ -1833,25 +1841,22 @@ def view_stats():
         + " (오답률은 채점된 문항만 분모로 사용)"
     )
 
+    if st.session_state.pop("_stats_reset_ok", False):
+        st.success("통계를 초기화했습니다.")
+    if st.session_state.pop("_stats_reset_err", False):
+        st.error("비밀번호가 올바르지 않습니다.")
+
     with st.expander("통계 초기화"):
-        with st.form("stats_reset_form", clear_on_submit=False, border=False):
-            reset_pw = st.text_input(
-                "비밀번호",
-                type="password",
-                key="stats_reset_pw",
-                placeholder="비밀번호 입력",
-            )
-            reset_ok = st.form_submit_button(
-                "통계 초기화",
-                type="primary",
-                use_container_width=True,
-            )
-        if reset_ok:
-            if can_reset_stats(reset_pw):
-                reset_learning_stats()
-                st.rerun()
-            else:
-                st.error("비밀번호가 올바르지 않습니다.")
+        reset_pw = st.text_input(
+            "비밀번호",
+            type="password",
+            key="stats_reset_pw",
+            placeholder="비밀번호 입력",
+        )
+        if st.button("통계 초기화", type="primary", use_container_width=True, key="stats_reset_btn"):
+            st.session_state._stats_reset_pw_val = reset_pw
+            st.session_state._do_stats_reset = True
+            st.rerun()
 
     tab_mock, tab_topic = st.tabs(["실전 모의고사 과목별", "주제별 문제풀이 과목별"])
     with tab_mock:
