@@ -1,0 +1,31 @@
+name: Keep Streamlit awake
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+jobs:
+  wake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Playwright
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install playwright
+          python -m playwright install --with-deps chromium
+
+      - name: Wake Streamlit Cloud
+        env:
+          DAMOA_STREAMLIT_URL: https://police-exam.streamlit.app/?embed=true&keepalive=1
+          CI: "true"
+        run: python streamlit_app/keepalive.py
