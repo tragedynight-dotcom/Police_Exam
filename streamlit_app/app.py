@@ -307,6 +307,13 @@ def apply_pending_result_filter_reset():
     st.session_state.result_wrong_toggle = False
 
 
+def begin_exam(*args, **kwargs):
+    try:
+        return start_exam(*args, **kwargs)
+    except Exception:
+        return None, "시험을 시작하지 못했습니다. 잠시 후 다시 눌러 주세요."
+
+
 def go(view: str, **kwargs):
     prev_view = st.session_state.get("view")
     prev_attempt = st.session_state.get("attempt_id")
@@ -1862,7 +1869,7 @@ def view_dashboard():
         )
         st.markdown('<div class="mock-btn-mark"></div>', unsafe_allow_html=True)
         if st.button("실전 모의고사 풀기", type="primary", use_container_width=True, key="dash_mock"):
-            aid, err = start_exam(user["id"], kind="mock", reveal_mode="end", force_new=True)
+            aid, err = begin_exam(user["id"], kind="mock", reveal_mode="end", force_new=True)
             if err:
                 st.error(err)
             else:
@@ -2167,7 +2174,7 @@ def view_topics():
         with a_btn:
             st.markdown('<div class="card-banner-btn-mark"></div>', unsafe_allow_html=True)
             if st.button(all_label, type="primary", use_container_width=True, key="topics_all"):
-                aid, err = start_exam(user["id"], kind="all", reveal_mode=mode, force_new=True)
+                aid, err = begin_exam(user["id"], kind="all", reveal_mode=mode, force_new=True)
                 if err:
                     st.error(err)
                 else:
@@ -2195,7 +2202,7 @@ def view_topics():
                 with t_btn:
                     st.markdown('<div class="card-banner-btn-mark"></div>', unsafe_allow_html=True)
                     if st.button(btn, key=f"cat_{cat['id']}", type="primary", use_container_width=True):
-                        aid, err = start_exam(
+                        aid, err = begin_exam(
                             user["id"],
                             kind="topic",
                             category_id=cat["id"],
@@ -2459,7 +2466,7 @@ def view_result():
                 key=f"{key_prefix}_retry_wrong",
                 disabled=not can_retry_wrong,
             ):
-                aid, err = start_exam(
+                aid, err = begin_exam(
                     user["id"],
                     kind=attempt["kind"],
                     category_id=cat_id,
@@ -2478,7 +2485,7 @@ def view_result():
                 type="secondary",
                 key=f"{key_prefix}_retry_all",
             ):
-                aid, err = start_exam(
+                aid, err = begin_exam(
                     user["id"],
                     kind=attempt["kind"],
                     category_id=cat_id,
