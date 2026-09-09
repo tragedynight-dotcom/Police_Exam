@@ -4,6 +4,7 @@ import base64
 import json
 import os
 import sqlite3
+import tempfile
 import threading
 import time
 import urllib.error
@@ -11,7 +12,6 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-DB_PATH = ROOT / "dev.db"
 STORAGE_IMAGES = ROOT / "storage" / "question-images"
 
 _conn: sqlite3.Connection | None = None
@@ -20,6 +20,42 @@ _pulled = False
 _push_timer: threading.Timer | None = None
 _push_lock = threading.Lock()
 _write_lock = threading.Lock()
+_resolved_db_path: Path | None = None
+
+
+def get_db_path() -> Path:
+    """Streamlit Cloud의 /mount/src 는 쓰기가 막히는 경우가 있어 /tmp 를 쓴다."""
+    global _resolved_db_path
+    if _resolved_db_path is not None:
+        return _resolved_db_path
+    repo_db = ROOT / "dev.db"
+    on_cloud = str(ROOT).replace("\\", "/").startswith("/mount/src")
+    if on_cloud:
+        dest = Path(tempfile.gettempdir()) / "datonggwa" / "dev.db"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if repo_db.exists() and not dest.exists():
+            dest.write_bytes(repo_db.read_bytes())
+        _resolved_db_path = dest
+        return dest
+    _resolved_db_path = repo_db
+    return repo_db
+
+
+def _use_tmp_db() -> Path:
+    global _resolved_db_path, _conn
+    dest = Path(tempfile.gettempdir()) / "datonggwa" / "dev.db"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    src = _resolved_db_path
+    if src and src.exists() and src.resolve() != dest.resolve():
+        dest.write_bytes(src.read_bytes())
+    if _conn is not None:
+        try:
+            _conn.close()
+        except Exception:
+            pass
+        _conn = None
+    _resolved_db_path = dest
+    return dest
 
 _SCHEMA_SQL = [
     """
@@ -209,14 +245,15 @@ def pull_db_from_github() -> bool:
     raw = base64.b64decode(info["content"].replace("\n", ""))
     if not raw:
         return False
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    DB_PATH.write_bytes(raw)
+    path = get_db_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(raw)
     return True
 
 
 def push_db_to_github() -> bool:
     cfg = github_sync_config()
-    if not cfg or not DB_PATH.exists():
+    if not cfg or not get_db_path().exists():
         return False
     conn = _conn
     if conn is not None:
@@ -226,7 +263,7 @@ def push_db_to_github() -> bool:
         except Exception:
             pass
     _ensure_data_branch(cfg)
-    content = base64.b64encode(DB_PATH.read_bytes()).decode("ascii")
+    content = base64.b64encode(get_db_path().read_bytes()).decode("ascii")
     current = _gh_request(
         "GET",
         f"/repos/{cfg['repo']}/contents/{cfg['path']}?ref={cfg['branch']}",
@@ -311,14 +348,15 @@ def get_conn() -> sqlite3.Connection:
         try:
             if pull_db_from_github():
                 print("[damoa] GitHub 데이터 브랜치에서 기록을 불러왔습니다.", flush=True)
-            elif DB_PATH.exists() and github_sync_config():
+            elif get_db_path().exists() and github_sync_config():
                 print("[damoa] 데이터 브랜치가 비어 있어 현재 DB를 백업합니다.", flush=True)
                 push_db_to_github()
         except Exception as exc:
             print(f"[damoa] GitHub DB 불러오기 실패: {exc}", flush=True)
 
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    _conn = sqlite3.connect(str(DB_PATH), check_same_thread=False, timeout=15)
+    path = get_db_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _conn = sqlite3.connect(str(path), check_same_thread=False, timeout=15)
     _conn.row_factory = sqlite3.Row
     _conn.execute("PRAGMA busy_timeout = 8000")
     _conn.execute("PRAGMA foreign_keys = ON")
@@ -336,20 +374,64 @@ def fetch_all(sql: str, params: tuple = ()) -> list:
     return [_as_row(cursor, row) for row in cursor.fetchall()]
 
 
+def _is_readonly_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return any(
+        part in msg
+        for part in ("readonly", "read-only", "unable to open", "disk i/o")
+    )
+
+
 def execute(sql: str, params: tuple = ()) -> None:
-    conn = get_conn()
-    with _write_lock:
-        conn.execute(sql, params)
-        conn.commit()
-    _schedule_push()
+    last_err: Exception | None = None
+    for _ in range(3):
+        try:
+            conn = get_conn()
+            with _write_lock:
+                conn.execute(sql, params)
+                conn.commit()
+            _schedule_push()
+            return
+        except sqlite3.OperationalError as exc:
+            last_err = exc
+            if _is_readonly_error(exc):
+                _use_tmp_db()
+            time.sleep(0.25)
+    if last_err:
+        raise last_err
 
 
 def executemany(sql: str, params_seq: list[tuple]) -> None:
+    last_err: Exception | None = None
+    for _ in range(3):
+        try:
+            conn = get_conn()
+            with _write_lock:
+                conn.executemany(sql, params_seq)
+                conn.commit()
+            _schedule_push()
+            return
+        except sqlite3.OperationalError as exc:
+            last_err = exc
+            if _is_readonly_error(exc):
+                _use_tmp_db()
+            time.sleep(0.25)
+    if last_err:
+        raise last_err
+
+
+def ensure_attempt_tables() -> None:
+    global _schema_ready
     conn = get_conn()
-    with _write_lock:
-        conn.executemany(sql, params_seq)
-        conn.commit()
-    _schedule_push()
+    names = {
+        row[0]
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    }
+    if "Attempt" not in names or "AttemptQuestion" not in names:
+        _schema_ready = False
+        _ensure_schema(conn)
 
 
 def clear_exam_records() -> int:

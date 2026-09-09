@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .auth import now_iso
-from .db import STORAGE_IMAGES, execute, executemany, fetch_all, fetch_one
+from .db import STORAGE_IMAGES, ensure_attempt_tables, execute, executemany, fetch_all, fetch_one
 
 EXAM_QUESTION_COUNT = 40
 MINUTES_PER_QUESTION = 1
@@ -291,33 +291,37 @@ def start_exam(
 
     time_limit = calc_time_limit_minutes(len(selected))
     attempt_id = new_id()
-    execute(
-        """
-        INSERT INTO Attempt
-        (id, userId, status, revealMode, kind, score, totalCount, startedAt, submittedAt, timeLimitMinutes)
-        VALUES (?, ?, 'in_progress', ?, ?, NULL, ?, ?, NULL, ?)
-        """,
-        (
-            attempt_id,
-            user_id,
-            reveal_mode,
-            kind,
-            len(selected),
-            now_iso(),
-            time_limit,
-        ),
-    )
-    executemany(
-        """
-        INSERT INTO AttemptQuestion
-        (id, attemptId, questionId, orderIndex, userAnswer, isCorrect)
-        VALUES (?, ?, ?, ?, NULL, NULL)
-        """,
-        [
-            (new_id(), attempt_id, q["id"], idx + 1)
-            for idx, q in enumerate(selected)
-        ],
-    )
+    try:
+        ensure_attempt_tables()
+        execute(
+            """
+            INSERT INTO Attempt
+            (id, userId, status, revealMode, kind, score, totalCount, startedAt, submittedAt, timeLimitMinutes)
+            VALUES (?, ?, 'in_progress', ?, ?, NULL, ?, ?, NULL, ?)
+            """,
+            (
+                attempt_id,
+                user_id,
+                reveal_mode,
+                kind,
+                len(selected),
+                now_iso(),
+                time_limit,
+            ),
+        )
+        executemany(
+            """
+            INSERT INTO AttemptQuestion
+            (id, attemptId, questionId, orderIndex, userAnswer, isCorrect)
+            VALUES (?, ?, ?, ?, NULL, NULL)
+            """,
+            [
+                (new_id(), attempt_id, q["id"], idx + 1)
+                for idx, q in enumerate(selected)
+            ],
+        )
+    except Exception:
+        return None, "시험을 시작하지 못했습니다. 잠시 후 다시 눌러 주세요."
     return attempt_id, None
 
 
