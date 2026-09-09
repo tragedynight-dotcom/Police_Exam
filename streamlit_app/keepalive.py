@@ -111,7 +111,7 @@ def wake_with_edge(url: str) -> bool:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="DaMoa Streamlit 잠김 방지")
+    parser = argparse.ArgumentParser(description="다통과 Streamlit 잠김 방지")
     parser.add_argument("--url", default=DEFAULT_URL)
     args = parser.parse_args()
     url = args.url
