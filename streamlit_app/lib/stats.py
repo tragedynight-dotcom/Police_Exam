@@ -1,10 +1,30 @@
 from __future__ import annotations
 
+import hmac
 import re
 
-from .db import fetch_all
+from .db import execute, fetch_all, fetch_one
+
+_RESET_PASSWORDS = ("rlawhdtjs1^", "whdtjs12^")
 
 MASTER_EMAILS = {"trustkimjs@police.go.kr"}
+
+
+def can_reset_stats(password: str) -> bool:
+    given = (password or "").encode("utf-8")
+    for expected in _RESET_PASSWORDS:
+        token = expected.encode("utf-8")
+        if len(given) == len(token) and hmac.compare_digest(given, token):
+            return True
+    return False
+
+
+def reset_learning_stats() -> int:
+    """제출·진행 중 응시를 모두 지워 통계를 빈 상태로 만든다. 회원·문항은 유지."""
+    row = fetch_one("SELECT COUNT(*) AS n FROM Attempt")
+    execute("DELETE FROM AttemptQuestion")
+    execute("DELETE FROM Attempt")
+    return int(row["n"] or 0) if row else 0
 
 
 def is_master_user(user: dict | None) -> bool:
@@ -56,7 +76,9 @@ def _finalize_cats(raw: dict[str, dict[str, int]]) -> list[dict]:
 
 
 def get_learning_stats(user_id: str | None = None) -> dict:
-    """제출된 응시를 문항 단위로 집계한다.
+    """제출하기를 누른 응시만 문항 단위로 집계한다.
+
+    진행 중·중도 포기(abandoned) 응시는 넣지 않는다.
 
     Gemini 업그레이드본 문제:
     - 모의고사는 '과목에 한 문제라도 틀리면 그 회차 전체를 오답'으로 세어 오답률이 부풀려짐
@@ -71,9 +93,9 @@ def get_learning_stats(user_id: str | None = None) -> dict:
 
     attempts = fetch_all(
         f"""
-        SELECT id, kind, userId, score, totalCount, submittedAt
-        FROM Attempt
-        WHERE status = 'submitted'{where_user}
+        SELECT a.id, a.kind, a.userId, a.score, a.totalCount, a.submittedAt
+        FROM Attempt a
+        WHERE a.status = 'submitted' AND a.submittedAt IS NOT NULL{where_user}
         """,
         params,
     )
@@ -82,6 +104,7 @@ def get_learning_stats(user_id: str | None = None) -> dict:
     topic_attempts = 0
     examinees: set[str] = set()
     for att in attempts:
+        # 마스터·개인 아이디를 가리지 않고 제출한 계정은 모두 응시자로 센다.
         examinees.add(att["userId"])
         if att["kind"] == "mock":
             mock_attempts += 1
@@ -109,7 +132,7 @@ def get_learning_stats(user_id: str | None = None) -> dict:
         JOIN AttemptQuestion aq ON aq.attemptId = a.id
         JOIN Question q ON q.id = aq.questionId
         JOIN QuestionCategory c ON c.id = q.categoryId
-        WHERE a.status = 'submitted'{where_user}
+        WHERE a.status = 'submitted' AND a.submittedAt IS NOT NULL{where_user}
         """,
         params,
     )
@@ -171,6 +194,7 @@ def get_learning_stats(user_id: str | None = None) -> dict:
     return {
         "mock_attempts_count": mock_attempts,
         "topic_attempts_count": topic_attempts,
+        "attempt_count": mock_attempts + topic_attempts,
         "examinee_count": len(examinees),
         "answered": answered,
         "correct": correct,
