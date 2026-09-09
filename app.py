@@ -1926,9 +1926,12 @@ def view_stats():
     if st.session_state.pop("_do_stats_reset", False):
         pw = st.session_state.pop("_stats_reset_pw_val", "")
         if can_reset_stats(pw):
-            reset_learning_stats()
-            st.session_state.attempt_id = None
-            st.session_state._stats_reset_ok = True
+            try:
+                reset_learning_stats()
+                st.session_state.attempt_id = None
+                st.session_state._stats_reset_ok = True
+            except Exception:
+                st.session_state._stats_reset_fail = True
         else:
             st.session_state._stats_reset_err = True
     app_shell_css()
@@ -1992,6 +1995,8 @@ def view_stats():
         st.success("통계를 초기화했습니다.")
     if st.session_state.pop("_stats_reset_err", False):
         st.error("비밀번호가 올바르지 않습니다.")
+    if st.session_state.pop("_stats_reset_fail", False):
+        st.error("통계 초기화에 실패했습니다. 몇 초 뒤에 다시 눌러 주세요.")
 
     with st.expander("통계 초기화"):
         reset_pw = st.text_input(
