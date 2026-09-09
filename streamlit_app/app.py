@@ -424,18 +424,9 @@ def flush_scroll_top():
                 anchor.scrollIntoView({{ behavior: 'auto', block: 'start' }});
               }} catch (e) {{}}
             }}
-            win.scrollTo(0, 0);
           }}
-          // Streamlit이 위젯 포커스로 스크롤을 되돌리는 경우를 잠시 덮어쓴다.
-          const until = Date.now() + 900;
-          function lockTop() {{
-            toTop();
-            if (Date.now() < until) {{
-              requestAnimationFrame(lockTop);
-            }}
-          }}
-          lockTop();
-          [50, 120, 250, 450, 700].forEach(function (t) {{ setTimeout(toTop, t); }});
+          toTop();
+          [40, 160].forEach(function (t) {{ setTimeout(toTop, t); }});
         }})();
         </script>
         """,
@@ -1513,6 +1504,26 @@ def app_shell_css():
         """
     )
     inject_choice_sfx()
+    inject_embed_ready()
+
+
+def inject_embed_ready() -> None:
+    """GitHub 홈페이지 iframe에 '앱이 켜졌다'고 알린다."""
+    components.html(
+        """
+        <script>
+        (function() {
+          try {
+            if (window.parent && window.parent !== window) {
+              window.parent.postMessage({ type: "DAMOA_READY" }, "*");
+            }
+          } catch (e) {}
+        })();
+        </script>
+        """,
+        height=0,
+        width=0,
+    )
 
 
 def _choice_click_wav_b64() -> str:
@@ -2195,11 +2206,10 @@ def view_exam():
             if is_learn:
                 request_scroll_to(".exam-feedback-anchor", block="center")
             else:
-                # 시험보기/모의고사: 보기 클릭 시 다음 문제 상단으로
                 if not is_last:
                     st.session_state.q_index = idx + 1
                     st.session_state.feedback = None
-                request_scroll_top()
+                    request_scroll_to(".exam-question-anchor", block="start")
             st.rerun()
         else:
             st.error(msg)
@@ -2255,7 +2265,7 @@ def view_exam():
             else:
                 st.session_state.q_index = idx + 1
                 st.session_state.feedback = None
-                request_scroll_top()
+                request_scroll_to(".exam-question-anchor", block="start")
                 st.rerun()
 
     side_l, side_r = st.columns(2, gap="small")
@@ -2264,7 +2274,7 @@ def view_exam():
         if st.button("이전", disabled=idx <= 0, use_container_width=True, type="secondary", key="exam_prev"):
             st.session_state.q_index = idx - 1
             st.session_state.feedback = None
-            request_scroll_top()
+            request_scroll_to(".exam-question-anchor", block="start")
             st.rerun()
     with side_r:
         if st.button("홈으로", use_container_width=True, type="secondary", key="exam_home"):
