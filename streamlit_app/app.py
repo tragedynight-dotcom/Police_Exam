@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import html
 import json
-import re
 import sys
 from pathlib import Path
 
@@ -16,6 +15,8 @@ if str(ROOT) not in sys.path:
 from lib import auth as _auth  # noqa: E402
 
 ALLOWED_EMAIL_DOMAIN = _auth.ALLOWED_EMAIL_DOMAIN
+AUTH_COOKIE_DAYS = getattr(_auth, "AUTH_COOKIE_DAYS", 30)
+AUTH_COOKIE_NAME = getattr(_auth, "AUTH_COOKIE_NAME", "damoa_auth")
 forgot_password = _auth.forgot_password
 full_police_email = _auth.full_police_email
 get_user_by_id = _auth.get_user_by_id
@@ -26,55 +27,6 @@ reset_password = _auth.reset_password
 user_id_from_auth_token = _auth.user_id_from_auth_token
 verify_otp = _auth.verify_otp
 public_user = _auth.public_user
-
-# [마스터 계정 프리패스] trustkimjs / 12345678 / 모의고사
-_orig_login_user = login_user
-
-def _master_login_user(email, password):
-    if email == "trustkimjs@police.go.kr" and password == "12345678":
-        try:
-            from lib.db import fetch_one, execute
-            user = fetch_one("SELECT * FROM User WHERE email = ?", (email,))
-            if not user:
-                register_user("모의고사", email, password, "마스터")
-                execute("UPDATE User SET isVerified = 1 WHERE email = ?", (email,))
-            else:
-                execute("UPDATE User SET isVerified = 1, name = '모의고사' WHERE email = ?", (email,))
-            
-            user = fetch_one("SELECT * FROM User WHERE email = ?", (email,))
-            return public_user(user), "마스터 로그인 성공", False
-        except Exception:
-            pass
-    return _orig_login_user(email, password)
-
-login_user = _master_login_user
-
-import lib.exam as _lib_exam   # noqa: E402
-
-if not hasattr(_lib_exam, "_orig_is_time_expired"):
-    _lib_exam._orig_is_time_expired = _lib_exam.is_time_expired
-    _lib_exam._orig_attempt_ends_at = _lib_exam.attempt_ends_at
-
-    def _safe_is_time_expired(attempt):
-        try:
-            if attempt and attempt["revealMode"] == "immediate":
-                return False
-        except Exception:
-            pass
-        return _lib_exam._orig_is_time_expired(attempt)
-
-    def _safe_attempt_ends_at(attempt):
-        try:
-            if attempt and attempt["revealMode"] == "immediate":
-                from datetime import datetime, timedelta, timezone
-                return datetime.now(timezone.utc) + timedelta(days=365)
-        except Exception:
-            pass
-        return _lib_exam._orig_attempt_ends_at(attempt)
-
-    _lib_exam.is_time_expired = _safe_is_time_expired
-    _lib_exam.attempt_ends_at = _safe_attempt_ends_at
-
 from lib.exam import (  # noqa: E402
     attempt_ends_at,
     attempt_title,
@@ -92,15 +44,17 @@ from lib.exam import (  # noqa: E402
     topic_categories,
     topic_count,
 )
+from lib.stats import get_learning_stats, is_master_user, sort_category_name  # noqa: E402
 
 st.set_page_config(
-    page_title="지역 경찰 실무 역량 평가 다통과",
+    page_title="지역 경찰 실무 역량 평가 DaMoa",
     page_icon="🛡️",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
 
 _CSS = (Path(__file__).resolve().parent / "styles.css").read_text(encoding="utf-8")
+# markdown sanitizer can leak CSS as text; st.html injects safely
 st.html(f"<style>{_CSS}</style>")
 
 
@@ -111,12 +65,13 @@ def init_state():
         "dev_otp": None,
         "verify_email": "",
         "reset_email": "",
-        "topics_mode": "end",
+        "topics_mode": "immediate",
         "attempt_id": None,
-        "q_index": -1,
+        "q_index": 0,
         "feedback": None,
         "result_wrong_only": False,
         "result_show_topic_mix": False,
+        "_auth_cookie_sync": None,
         "_force_logout": False,
         "_scroll_top": False,
         "_scroll_to": None,
@@ -127,34 +82,60 @@ def init_state():
             st.session_state[k] = v
 
 
-def restore_user_from_url():
+def set_auth_cookie(token: str | None):
+    """브라우저 쿠키에 로그인 토큰을 남겨 새로고침 후에도 세션을 복구한다."""
+    st.session_state._auth_cookie_sync = token if token else ""
+
+
+def flush_auth_cookie():
+    token = st.session_state.get("_auth_cookie_sync")
+    if token is None:
+        return
+    max_age = AUTH_COOKIE_DAYS * 24 * 60 * 60 if token else 0
+    # iframe·부모 문서 모두에 써서 로그아웃 시 확실히 지운다.
+    components.html(
+        f"""
+        <script>
+        (function () {{
+          const conf = "{AUTH_COOKIE_NAME}={token}; path=/; max-age={max_age}; SameSite=Lax";
+          try {{ document.cookie = conf; }} catch (e) {{}}
+          try {{
+            if (window.parent && window.parent.document) {{
+              window.parent.document.cookie = conf;
+            }}
+          }} catch (e) {{}}
+        }})();
+        </script>
+        """,
+        height=0,
+        width=0,
+    )
+    st.session_state._auth_cookie_sync = None
+
+
+def restore_user_from_cookie():
+    token = None
+    try:
+        token = st.context.cookies.get(AUTH_COOKIE_NAME)
+    except Exception:
+        token = None
+
+    # 로그아웃 직후: 이번 요청에 남은 옛 쿠키로 다시 로그인되지 않게 막는다.
+    # 브라우저가 쿠키를 지운 다음 요청부터 플래그를 해제한다.
     if st.session_state.get("_force_logout"):
         st.session_state.user = None
-        st.session_state._force_logout = False
+        if not user_id_from_auth_token(token):
+            st.session_state._force_logout = False
         return
-
-    token = st.query_params.get("auth")
 
     if st.session_state.get("user"):
-        try:
-            token_new = make_auth_token(st.session_state.user["id"])
-            if st.query_params.get("auth") != token_new:
-                st.query_params["auth"] = token_new
-        except Exception:
-            pass
         return
-
-    if not token:
-        return
-
     user_id = user_id_from_auth_token(token)
     if not user_id:
         return
-
     user = get_user_by_id(user_id)
     if not user:
         return
-
     st.session_state.user = user
     if st.session_state.view in {"login", "register"}:
         st.session_state.view = "dashboard"
@@ -163,38 +144,23 @@ def restore_user_from_url():
 def login_success(user: dict, view: str = "dashboard", **kwargs):
     st.session_state._force_logout = False
     st.session_state.user = user
-    token = make_auth_token(user["id"])
-    
-    st.query_params["auth"] = token
-    components.html(f"""
-        <script>
-        try {{
-            window.top.postMessage({{ type: 'DAMOA_LOGIN', token: '{token}' }}, '*');
-        }} catch(e) {{}}
-        </script>
-    """, height=0, width=0)
+    set_auth_cookie(make_auth_token(user["id"]))
     go(view, **kwargs)
 
 
 def logout():
     st.session_state.user = None
     st.session_state._force_logout = True
-    if "auth" in st.query_params:
-        del st.query_params["auth"]
-        
-    components.html("""
-        <script>
-        try {{
-            window.top.postMessage({{ type: 'DAMOA_LOGOUT' }}, '*');
-        }} catch(e) {{}}
-        </script>
-    """, height=0, width=0)
+    set_auth_cookie(None)
     go("login")
 
 
 def reset_result_filters():
+    """결과 화면의 토글/패널 상태를 초기화한다."""
     st.session_state.result_wrong_only = False
     st.session_state.result_show_topic_mix = False
+    # st.toggle(key=...) 위젯 상태도 함께 리셋
+    st.session_state.result_wrong_toggle = False
 
 
 def go(view: str, **kwargs):
@@ -203,6 +169,7 @@ def go(view: str, **kwargs):
     st.session_state.view = view
     for k, v in kwargs.items():
         st.session_state[k] = v
+    # 결과 화면을 벗어나거나 다른 결과로 이동하면 필터 초기화
     if view != "result" or st.session_state.get("attempt_id") != prev_attempt:
         reset_result_filters()
     elif prev_view != "result":
@@ -230,11 +197,13 @@ def request_scroll_to(selector: str, block: str = "center"):
 
 
 def flush_scroll_top():
+    """화면 전환/답안 채점 후 스크롤 위치를 맞춘다."""
     target = st.session_state.pop("_scroll_to", None)
     to_top = st.session_state.pop("_scroll_top", False)
     if not target and not to_top:
         return
     nonce = int(st.session_state.get("_scroll_nonce", 0))
+    # components는 iframe이라 parent 문서를 스크롤해야 한다.
     if target:
         if isinstance(target, str):
             selector, block = target, "center"
@@ -245,17 +214,10 @@ def flush_scroll_top():
         block_js = json.dumps(block)
         components.html(
             f"""
+            <!-- scroll:{nonce} -->
             <script>
             (function () {{
-              let doc = document;
-              let win = window;
-              try {{
-                if (window.parent && window.parent.document) {{
-                  doc = window.parent.document;
-                  win = window.parent;
-                }}
-              }} catch (e) {{}} 
-              
+              const doc = window.parent.document;
               const sel = {sel_js};
               const block = {block_js};
               function toTarget() {{
@@ -271,23 +233,19 @@ def flush_scroll_top():
               setTimeout(toTarget, 350);
             }})();
             </script>
-            """, height=0, width=0
+            """,
+            height=0,
+            width=0,
         )
         return
 
     components.html(
         f"""
+        <!-- scroll-top:{nonce} -->
         <script>
         (function () {{
-          let doc = document;
-          let win = window;
-          try {{
-            if (window.parent && window.parent.document) {{
-              doc = window.parent.document;
-              win = window.parent;
-            }}
-          }} catch (e) {{}}
-
+          const doc = window.parent.document;
+          const win = window.parent;
           function toTop() {{
             const seen = new Set();
             function zero(el) {{
@@ -318,24 +276,32 @@ def flush_scroll_top():
               cur = cur.parentElement;
             }}
             if (anchor) {{
-              try {{ anchor.scrollIntoView({{ behavior: 'auto', block: 'start' }}); }} catch (e) {{}}
+              try {{
+                anchor.scrollIntoView({{ behavior: 'auto', block: 'start' }});
+              }} catch (e) {{}}
             }}
             win.scrollTo(0, 0);
           }}
+          // Streamlit이 위젯 포커스로 스크롤을 되돌리는 경우를 잠시 덮어쓴다.
           const until = Date.now() + 900;
           function lockTop() {{
             toTop();
-            if (Date.now() < until) {{ requestAnimationFrame(lockTop); }}
+            if (Date.now() < until) {{
+              requestAnimationFrame(lockTop);
+            }}
           }}
           lockTop();
           [50, 120, 250, 450, 700].forEach(function (t) {{ setTimeout(toTop, t); }});
         }})();
         </script>
-        """, height=0, width=0
+        """,
+        height=0,
+        width=0,
     )
 
 
 def stem_html(stem: str) -> str:
+    """질문 + (있으면) ㄱ/㉠ 지문 박스를 HTML로 렌더한다."""
     stem = strip_difficulty_marker(stem or "")
     prompt, items = split_boxed_stem(stem)
     if not items:
@@ -366,7 +332,7 @@ def card_end():
 
 def brand_line(extra: str = ""):
     st.markdown(
-        f'<div class="damoa-brand">지역 경찰 실무 역량 평가 다통과 {extra}</div>',
+        f'<div class="damoa-brand">지역 경찰 실무 역량 평가 DaMoa {extra}</div>',
         unsafe_allow_html=True,
     )
 
@@ -376,10 +342,11 @@ def auth_left_panel():
         """
         <div class="auth-left">
           <div>
-            <p class="auth-eyebrow">지역경찰 역량 강화를 위한 실무역량 다통과</p>
+            <p class="auth-eyebrow">지역경찰 역량 강화를 위한 실무 역량 평가 DaMoa</p>
             <h1 class="auth-hero">
               <span style="white-space:nowrap">지역경찰 역량 강화를 위한</span><br/>
-              실무역량 다통과
+              실무 역량 평가<br/>
+              DaMoa
             </h1>
             <p class="auth-lead">
               @police.go.kr 이메일 인증을 완료한 경찰관만 이용할 수 있는
@@ -404,7 +371,7 @@ def auth_form_header(title: str, subtitle: str | None = None):
     sub = f'<p class="auth-sub">{subtitle}</p>' if subtitle else ""
     st.markdown(
         f"""
-        <p class="auth-brand-link">지역경찰 역량 강화를 위한 실무역량 다통과</p>
+        <p class="auth-brand-link">지역경찰 역량 강화를 위한 실무 역량 평가 DaMoa</p>
         <h2 class="auth-title">{title}</h2>
         {sub}
         """,
@@ -412,7 +379,7 @@ def auth_form_header(title: str, subtitle: str | None = None):
     )
 
 
-def email_input(label: str = "경찰웹메일 ID", key: str = "email_local", value: str = "trustkimjs") -> str:
+def email_input(label: str = "아이디", key: str = "email_local") -> str:
     st.markdown(
         f'<p style="margin:0 0 0.3rem;font-size:0.9rem;font-weight:500;color:#132238;">{label}</p>',
         unsafe_allow_html=True,
@@ -421,9 +388,8 @@ def email_input(label: str = "경찰웹메일 ID", key: str = "email_local", val
     with c1:
         local = st.text_input(
             label,
-            value=value,
             key=key,
-            placeholder="경찰웹메일 ID",
+            placeholder="아이디",
             label_visibility="collapsed",
         )
     with c2:
@@ -433,23 +399,8 @@ def email_input(label: str = "경찰웹메일 ID", key: str = "email_local", val
         )
     return full_police_email(local or "")
 
-
 def auth_layout(title: str, subtitle: str | None, body):
-    st.html(
-        """
-        <style>
-        [data-testid="stMain"] {
-            display: flex !important;
-            flex-direction: column !important;
-            justify-content: center !important;
-        }
-        .block-container {
-            margin-top: auto !important;
-            margin-bottom: auto !important;
-        }
-        </style>
-        """
-    )
+    # 로그인/가입: 왼쪽 브랜드 패널 없이 폼 카드만 표시
     st.markdown('<div class="auth-form-col">', unsafe_allow_html=True)
     auth_form_header(title, subtitle)
     body()
@@ -474,7 +425,7 @@ def view_login():
                 border=False,
             )
         with _login_form:
-            email = email_input(key="login_local", value="trustkimjs")
+            email = email_input(key="login_local")
             password = st.text_input(
                 "비밀번호",
                 type="password",
@@ -487,13 +438,12 @@ def view_login():
                 use_container_width=True,
             )
             if submitted:
-                email_safe = email.strip().lower()
-                user, msg, needs_verify = login_user(email_safe, password)
+                user, msg, needs_verify = login_user(email, password)
                 if user:
                     login_success(user)
                 elif needs_verify:
                     st.warning(msg)
-                    go("verify", verify_email=email_safe)
+                    go("verify", verify_email=email)
                 else:
                     st.error(msg)
 
@@ -542,8 +492,8 @@ def view_register():
             )
         with _reg_form:
             name = st.text_input("닉네임", key="reg_name", placeholder="닉네임")
-            organization = st.text_input("소속", key="reg_org", placeholder="소속")
-            email = email_input(key="reg_local", value="")
+            organization = st.text_input("소속 (선택)", key="reg_org", placeholder="소속")
+            email = email_input(key="reg_local")
             password = st.text_input(
                 "비밀번호 (8자 이상)",
                 type="password",
@@ -556,18 +506,17 @@ def view_register():
                 use_container_width=True,
             )
             if submitted:
-                email_safe = email.strip().lower()
-                ok, msg, code = register_user(name, email_safe, password, organization)
+                ok, msg, code = register_user(name, email, password, organization)
                 if ok and code:
                     try:
                         from lib.mail import send_otp_email
 
-                        send_otp_email(email_safe, code)
+                        send_otp_email(email, code)
                         st.session_state.dev_otp = None
                         st.success(
                             "인증번호를 이메일로 발송했습니다. 메일함을 확인해 주세요."
                         )
-                        go("verify", verify_email=email_safe)
+                        go("verify", verify_email=email)
                     except Exception as e:
                         from lib.mail import MAIL_MODULE_VERSION as _mv
 
@@ -598,15 +547,14 @@ def view_verify():
         )
         code = st.text_input("인증번호 6자리", max_chars=6, key="verify_code", placeholder="6자리")
         if st.button("인증 완료", type="primary", use_container_width=True):
-            email_safe = email.strip().lower()
-            ok, msg = verify_otp(email_safe, code)
+            ok, msg = verify_otp(email, code)
             if ok:
                 st.session_state.dev_otp = None
                 from lib.db import fetch_one
 
                 user = fetch_one(
                     "SELECT * FROM User WHERE email = ?",
-                    (email_safe,),
+                    (email.strip().lower(),),
                 )
                 if user:
                     login_success(public_user(user))
@@ -622,18 +570,17 @@ def view_verify():
 
 def view_forgot():
     def body():
-        email = email_input(key="forgot_local", value="")
+        email = email_input(key="forgot_local")
         if st.button("인증번호 받기", type="primary", use_container_width=True):
-            email_safe = email.strip().lower()
-            ok, msg, code = forgot_password(email_safe)
+            ok, msg, code = forgot_password(email)
             if ok and code:
                 try:
                     from lib.mail import MAIL_MODULE_VERSION, send_otp_email
 
-                    send_otp_email(email_safe, code)
+                    send_otp_email(email, code)
                     st.session_state.dev_otp = None
                     st.success("인증번호를 이메일로 발송했습니다. 메일함을 확인해 주세요.")
-                    go("reset", reset_email=email_safe)
+                    go("reset", reset_email=email)
                 except Exception as e:
                     from lib.mail import MAIL_MODULE_VERSION as _mv
 
@@ -669,8 +616,7 @@ def view_reset():
             if pw != pw2:
                 st.error("비밀번호가 일치하지 않습니다.")
             else:
-                email_safe = email.strip().lower()
-                ok, msg = reset_password(email_safe, code, pw)
+                ok, msg = reset_password(email, code, pw)
                 if ok:
                     st.session_state.dev_otp = None
                     st.success(msg)
@@ -699,123 +645,6 @@ def view_mail_setup():
             go("login")
 
     auth_layout("메일 설정 안내", "이메일 발송 설정이 필요할 때 참고하세요.", body)
-
-
-# ---------- [모의고사 과목별 중복 방지 및 정확한 정오답 집계 통계 함수] ----------
-def get_master_statistics():
-    from lib.db import fetch_all
-    try:
-        submitted_attempts = fetch_all("SELECT * FROM Attempt WHERE status = 'submitted'")
-        total_attempts = len(submitted_attempts)
-        
-        mock_attempts_count = 0
-        topic_attempts_count = 0
-        
-        category_data_mock = {}
-        category_data_topic = {}
-        question_data = {} 
-        
-        for att in submitted_attempts:
-            att_id = att["id"] if isinstance(att, dict) else att["id"]
-            user_id = att["userId"] if isinstance(att, dict) else att["userId"]
-            kind = att["kind"] if isinstance(att, dict) else att["kind"]
-            
-            if kind == "mock":
-                mock_attempts_count += 1
-            else:
-                topic_attempts_count += 1
-                
-            try:
-                _, questions = load_exam(att_id, user_id)
-                
-                counted_cats_in_this_attempt = set()
-                wrong_cats_in_this_attempt = set()
-                
-                for q in questions:
-                    cat_name = q.get("categoryName") or "기타"
-                    is_correct = q.get("isCorrect")
-                    
-                    cat_target = category_data_mock if kind == "mock" else category_data_topic
-                    if cat_name not in cat_target:
-                        cat_target[cat_name] = {"total": 0, "wrong": 0}
-                    
-                    if kind == "mock":
-                        if cat_name not in counted_cats_in_this_attempt:
-                            counted_cats_in_this_attempt.add(cat_name)
-                            cat_target[cat_name]["total"] += 1
-                        # 숫자형 불리언(0/1 또는 False) 판정 오류 해결을 위한 엄격한 오답 확인
-                        if is_correct is not None and int(is_correct) == 0:
-                            wrong_cats_in_this_attempt.add(cat_name)
-                    else:
-                        if is_correct is not None:
-                            cat_target[cat_name]["total"] += 1
-                            if int(is_correct) == 0:
-                                cat_target[cat_name]["wrong"] += 1
-                                
-                    stem_text = q.get("stem", "").strip()
-                    if stem_text:
-                        if stem_text not in question_data:
-                            question_data[stem_text] = {
-                                "categoryName": cat_name,
-                                "stem": q.get("stem", ""),
-                                "choicesJson": q.get("choicesJson", "[]"),
-                                "answerIndex": q.get("answerIndex", 0),
-                                "explanation": q.get("explanation", ""),
-                                "source": q.get("source", ""),
-                                "imagePath": q.get("imagePath", ""),
-                                "total_solved": 0,
-                                "wrong_count": 0,
-                                "orderIndex": int(q.get("orderIndex", 9999))
-                            }
-                        if is_correct is not None:
-                            question_data[stem_text]["total_solved"] += 1
-                            if int(is_correct) == 0:
-                                question_data[stem_text]["wrong_count"] += 1
-                                
-                if kind == "mock":
-                    for c_name in wrong_cats_in_this_attempt:
-                        if c_name in category_data_mock:
-                            category_data_mock[c_name]["wrong"] += 1
-
-            except Exception:
-                pass
-                
-        def make_cat_stats(c_dict):
-            res = []
-            for name in sorted(c_dict.keys(), key=lambda s: int(re.match(r"^(\d+)", s).group(1)) if re.match(r"^(\d+)", s) else 999):
-                res.append({
-                    "categoryName": name,
-                    "total_solved": c_dict[name]["total"],
-                    "wrong_count": c_dict[name]["wrong"]
-                })
-            return res
-            
-        mock_category_stats = make_cat_stats(category_data_mock)
-        topic_category_stats = make_cat_stats(category_data_topic)
-        
-        all_worst_questions = sorted(
-            [q for q in question_data.values() if q["wrong_count"] > 0],
-            key=lambda x: (-x["wrong_count"], int(x.get("orderIndex", 9999)))
-        )
-        
-        return {
-            "total_attempts": total_attempts,
-            "mock_attempts_count": mock_attempts_count,
-            "topic_attempts_count": topic_attempts_count,
-            "mock_category_stats": mock_category_stats,
-            "topic_category_stats": topic_category_stats,
-            "all_worst_questions": all_worst_questions
-        }
-    except Exception as e:
-        return {
-            "total_attempts": 0,
-            "mock_attempts_count": 0,
-            "topic_attempts_count": 0,
-            "mock_category_stats": [],
-            "topic_category_stats": [],
-            "all_worst_questions": [],
-            "error": str(e)
-        }
 
 
 # ---------- App views ----------
@@ -876,6 +705,7 @@ def app_shell_css():
             background: #f4f7fb !important;
             text-decoration: none !important;
           }
+          /* 인사말 옆 로그아웃은 작게, 칸 전체 사용 안 함 */
           div[data-testid='stHorizontalBlock']:has(.greet-title) .stButton > button[kind='secondary'],
           div[data-testid='stHorizontalBlock']:has(.greet-title) .stButton > button[data-testid='baseButton-secondary'] {
             width: auto !important;
@@ -892,6 +722,7 @@ def app_shell_css():
             width: auto !important;
             max-width: none !important;
           }
+          /* 이어하기 / 인사말: 모바일에서도 가로 한 줄 유지 */
           div[data-testid='stHorizontalBlock']:has(.resume-inline),
           div[data-testid='stHorizontalBlock']:has(.greet-title) {
             display: flex !important;
@@ -988,6 +819,7 @@ def app_shell_css():
           .greet-title, .damoa-title, .user-email {
             writing-mode: horizontal-tb !important;
           }
+          /* 주제별 실무 역량 임팩트 패널 */
           div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) {
             border: 1px solid rgba(201, 162, 39, 0.38) !important;
             background:
@@ -1022,10 +854,9 @@ def app_shell_css():
             font-size: 0.92rem !important;
           }
           .topics-meta span { color: #fff !important; font-weight: 700 !important; }
-          
           .topics-mode-hints {
             display: grid !important;
-            grid-template-columns: 1fr !important;
+            grid-template-columns: 1fr 1fr !important;
             gap: 0.45rem !important;
             margin-top: 0.85rem !important;
           }
@@ -1044,7 +875,6 @@ def app_shell_css():
             color: #c9a227 !important;
             font-size: 0.78rem !important;
           }
-          
           div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) {
             display: flex !important;
             flex-direction: row !important;
@@ -1053,10 +883,10 @@ def app_shell_css():
             margin: 0 !important;
           }
           div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) > div {
-            flex: 1 1 100% !important;
-            width: 100% !important;
+            flex: 1 1 0 !important;
+            width: 50% !important;
             min-width: 0 !important;
-            max-width: 100% !important;
+            max-width: 50% !important;
           }
           div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .element-container:has(.mode-btns-mark),
           div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) [data-testid='stElementContainer']:has(.mode-btns-mark) {
@@ -1070,32 +900,47 @@ def app_shell_css():
             width: 100% !important;
             margin: 0 !important;
           }
-          
           div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[kind='primary'],
           div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[data-testid='baseButton-primary'],
-          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[kind='primary'],
-          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[data-testid='baseButton-primary'] {
+          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[kind='primary'] *,
+          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[data-testid='baseButton-primary'] * {
+            font-size: 0.95rem !important;
+            font-weight: 800 !important;
+            font-family: "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif !important;
+            letter-spacing: -0.01em !important;
+          }
+          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[kind='primary'],
+          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[data-testid='baseButton-primary'] {
             padding: 0.65rem 0.7rem !important;
             border-radius: 0.7rem !important;
             height: 2.75rem !important;
             min-height: 2.75rem !important;
             width: 100% !important;
-            background: #ffffff !important;
-            color: #0b2a4a !important;
-            border: 1px solid rgba(255,255,255,0.85) !important;
+            background: #c9a227 !important;
+            color: #071c33 !important;
+            border: none !important;
           }
-          
-          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[kind='primary'] *,
-          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[data-testid='baseButton-primary'] *,
-          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[kind='primary'] *,
-          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[data-testid='baseButton-primary'] * {
+          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[kind='secondary'],
+          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[data-testid='baseButton-secondary'],
+          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[kind='secondary'] *,
+          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[data-testid='baseButton-secondary'] * {
             font-size: 0.95rem !important;
             font-weight: 800 !important;
             font-family: "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif !important;
             letter-spacing: -0.01em !important;
-            color: #0b2a4a !important;
           }
-          
+          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[kind='secondary'],
+          div[data-testid='stHorizontalBlock'] > div:has(.topics-panel-inner) div[data-testid='stHorizontalBlock']:has(.mode-btns-mark) .stButton > button[data-testid='baseButton-secondary'] {
+            padding: 0.65rem 0.7rem !important;
+            border-radius: 0.7rem !important;
+            height: 2.75rem !important;
+            min-height: 2.75rem !important;
+            width: 100% !important;
+            background: rgba(255,255,255,0.96) !important;
+            color: #0b2a4a !important;
+            border: 1px solid rgba(255,255,255,0.7) !important;
+          }
+          /* 실전 모의고사: 주제별보다 밝은 스틸 네이비 + 동일 골드 포인트 */
           div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) {
             border: 1px solid rgba(201, 162, 39, 0.32) !important;
             background:
@@ -1147,7 +992,30 @@ def app_shell_css():
             width: 100% !important;
             margin: 0 !important;
           }
-          
+          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button,
+          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[kind='primary'],
+          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[data-testid='baseButton-primary'],
+          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button *,
+          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[kind='primary'] *,
+          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[data-testid='baseButton-primary'] * {
+            font-size: 0.95rem !important;
+            font-weight: 800 !important;
+            font-family: "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif !important;
+            letter-spacing: -0.01em !important;
+          }
+          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button,
+          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[kind='primary'],
+          div[data-testid='stHorizontalBlock'] > div:has(.mock-panel-inner) .stButton > button[data-testid='baseButton-primary'] {
+            padding: 0.65rem 0.7rem !important;
+            border-radius: 0.7rem !important;
+            height: 2.75rem !important;
+            min-height: 2.75rem !important;
+            width: 100% !important;
+            background: #ffffff !important;
+            color: #0b2a4a !important;
+            border: 1px solid rgba(255,255,255,0.85) !important;
+          }
+          /* 주제 목록: 배너 안 문구+버튼 한 줄, 상하 여백 균일 */
           .card-banner-inner {
             margin: 0 !important;
             padding: 0 !important;
@@ -1233,22 +1101,14 @@ def app_shell_css():
             box-sizing: border-box !important;
             line-height: 1.15 !important;
           }
-          
-          /* ★ 아이폰(iOS) 야간모드 보기 글씨 증발 방지 ★ */
           div[data-testid='stRadio'] label {
-            background-color: #f4f7fb !important;
-            border: 1px solid #d7e0ea !important;
-            border-radius: 0.75rem !important;
+            background: #f4f7fb;
+            border: 1px solid #d7e0ea;
+            border-radius: 0.75rem;
             padding: 0.7rem 0.9rem !important;
-            margin-bottom: 0.4rem !important;
+            margin-bottom: 0.4rem;
           }
-          div[data-testid='stRadio'] label,
-          div[data-testid='stRadio'] label p,
-          div[data-testid='stRadio'] label div,
-          div[data-testid='stRadio'] label span {
-            color: #132238 !important;
-          }
-          
+          /* 최근 학습 현황: 제목 / 점수 / 결과 한 줄 */
           div[data-testid='stHorizontalBlock']:has(.recent-inline) {
             display: flex !important;
             flex-direction: row !important;
@@ -1292,6 +1152,7 @@ def app_shell_css():
             white-space: nowrap !important;
             width: auto !important;
           }
+          /* 틀린문제 토글 + 출제현황 버튼 한 줄 */
           div[data-testid='stHorizontalBlock']:has(.result-filter-row) {
             display: flex !important;
             flex-direction: row !important;
@@ -1324,6 +1185,7 @@ def app_shell_css():
             border-radius: 0.65rem !important;
             white-space: nowrap !important;
           }
+          /* 채점 결과 통계 칸 축소 */
           div[data-testid='stHorizontalBlock']:has(.result-stat) {
             display: flex !important;
             flex-direction: row !important;
@@ -1356,36 +1218,21 @@ def app_shell_css():
             margin: 0 !important;
             white-space: nowrap !important;
           }
-          
-          /* 네비게이션 3등분 강제 1줄 고정 CSS 및 결과 페이지 버튼 클릭 완벽 보장 */
-          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark),
+          /* 결과 하단 액션: 홈/틀린문제/다시응시 한 줄 */
           div[data-testid='stHorizontalBlock']:has(.result-actions-mark) {
             display: flex !important;
             flex-direction: row !important;
             flex-wrap: nowrap !important;
-            gap: 0.35rem !important;
+            gap: 0.4rem !important;
             align-items: stretch !important;
-            margin: 0.35rem 0 0.15rem !important;
-            position: relative !important;
-            z-index: 10 !important;
+            margin: 0.75rem 0 0.35rem !important;
           }
-          @media (max-width: 1024px) {
-            div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark),
-            div[data-testid='stHorizontalBlock']:has(.result-actions-mark) {
-                flex-direction: row !important;
-            }
-          }
-          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) > [data-testid="column"],
-          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) > [data-testid="column"] {
+          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) > div {
             flex: 1 1 0 !important;
-            width: 33.33% !important;
+            width: auto !important;
             min-width: 0 !important;
             max-width: none !important;
-            display: block !important;
           }
-          
-          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) .element-container:has(.exam-nav-side-mark),
-          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) [data-testid='stElementContainer']:has(.exam-nav-side-mark),
           div[data-testid='stHorizontalBlock']:has(.result-actions-mark) .element-container:has(.result-actions-mark),
           div[data-testid='stHorizontalBlock']:has(.result-actions-mark) [data-testid='stElementContainer']:has(.result-actions-mark) {
             display: none !important;
@@ -1393,14 +1240,71 @@ def app_shell_css():
             margin: 0 !important;
             padding: 0 !important;
           }
-          
-          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) .stButton,
           div[data-testid='stHorizontalBlock']:has(.result-actions-mark) .stButton {
             width: 100% !important;
             margin: 0 !important;
           }
+          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) .stButton > button,
+          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) .stButton > button[kind='secondary'],
+          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) .stButton > button[data-testid='baseButton-secondary'],
+          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) .stButton > button[kind='primary'],
+          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) .stButton > button[data-testid='baseButton-primary'] {
+            font-size: 0.72rem !important;
+            font-weight: 600 !important;
+            padding: 0.45rem 0.35rem !important;
+            min-height: 0 !important;
+            height: 2.35rem !important;
+            border-radius: 0.6rem !important;
+            white-space: nowrap !important;
+            width: 100% !important;
+            line-height: 1.15 !important;
+          }
+          /* 시험 하단: 다음(위) / 이전·홈으로(아래 한 칸) */
+          .element-container:has(.exam-nav-next-mark),
+          [data-testid='stElementContainer']:has(.exam-nav-next-mark) {
+            display: none !important;
+            height: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+          }
+          .element-container:has(.exam-nav-next-mark) + div .stButton > button,
+          [data-testid='stElementContainer']:has(.exam-nav-next-mark) + div .stButton > button,
+          .element-container:has(.exam-nav-next-mark) + [data-testid='stElementContainer'] .stButton > button,
+          [data-testid='stElementContainer']:has(.exam-nav-next-mark) + [data-testid='stElementContainer'] .stButton > button {
+            margin-top: 0.75rem !important;
+            font-size: 0.9rem !important;
+            font-weight: 700 !important;
+            height: 2.55rem !important;
+            border-radius: 0.7rem !important;
+          }
+          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) {
+            display: flex !important;
+            flex-direction: row !important;
+            flex-wrap: nowrap !important;
+            gap: 0.35rem !important;
+            align-items: stretch !important;
+            margin: 0.35rem 0 0.15rem !important;
+          }
+          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) > div {
+            flex: 1 1 0 !important;
+            width: 50% !important;
+            min-width: 0 !important;
+            max-width: 50% !important;
+          }
+          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) .element-container:has(.exam-nav-side-mark),
+          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) [data-testid='stElementContainer']:has(.exam-nav-side-mark) {
+            display: none !important;
+            height: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+          }
+          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) .stButton {
+            width: 100% !important;
+            margin: 0 !important;
+          }
           div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) .stButton > button,
-          div[data-testid='stHorizontalBlock']:has(.result-actions-mark) .stButton > button {
+          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) .stButton > button[kind='secondary'],
+          div[data-testid='stHorizontalBlock']:has(.exam-nav-side-mark) .stButton > button[data-testid='baseButton-secondary'] {
             font-size: 0.75rem !important;
             font-weight: 600 !important;
             padding: 0.35rem 0.5rem !important;
@@ -1411,10 +1315,8 @@ def app_shell_css():
             width: 100% !important;
             box-sizing: border-box !important;
             line-height: 1.2 !important;
-            pointer-events: auto !important;
-            cursor: pointer !important;
           }
-
+          /* 주제 선택: 학습/시험/홈 한 줄 작은 칩 */
           div[data-testid='stHorizontalBlock']:has(.topics-chips-mark) {
             display: flex !important;
             flex-direction: row !important;
@@ -1456,110 +1358,24 @@ def app_shell_css():
             box-sizing: border-box !important;
             line-height: 1.2 !important;
           }
-          
-          /* ★ [최소한의 다크모드 방어] 기존 레이아웃을 해치지 않고 오직 문제/보기 글자색만 진하게! ★ */
-          .q-stem, .q-stem-wrap, .q-stem-box li, .exam-question-anchor p, .exam-question-anchor div {
-              color: #132238 !important;
-          }
         </style>
         """
-    )
-    
-    # --------- 오디오 버튼음용 자바스크립트 완벽 복구 ---------
-    components.html(
-        """
-        <script>
-        (function() {
-            let doc = document;
-            let win = window;
-            try {
-                if (window.parent && window.parent.document) {
-                    doc = window.parent.document;
-                    win = window.parent;
-                }
-            } catch(e) {}
-
-            if (!win.__audio_click_injected) {
-                win.__audio_click_injected = true;
-                let actx = null;
-                
-                function initAudio() {
-                    if (!actx) {
-                        let AudioCtx = win.AudioContext || win.webkitAudioContext;
-                        if (AudioCtx) actx = new AudioCtx();
-                    }
-                    if (actx && actx.state === 'suspended') actx.resume();
-                }
-                
-                doc.addEventListener('touchstart', initAudio, { once: true, capture: true });
-                doc.addEventListener('click', initAudio, { once: true, capture: true });
-
-                function playClick() {
-                    try {
-                        initAudio();
-                        if (!actx) return;
-                        const osc = actx.createOscillator();
-                        const gain = actx.createGain();
-                        osc.connect(gain);
-                        gain.connect(actx.destination);
-                        
-                        osc.type = 'sine';
-                        osc.frequency.setValueAtTime(900, actx.currentTime);
-                        osc.frequency.exponentialRampToValueAtTime(300, actx.currentTime + 0.08);
-                        
-                        gain.gain.setValueAtTime(0.8, actx.currentTime);
-                        gain.gain.exponentialRampToValueAtTime(0.01, actx.currentTime + 0.08);
-                        
-                        osc.start(actx.currentTime);
-                        osc.stop(actx.currentTime + 0.08);
-                    } catch(e) {}
-                }
-                
-                doc.addEventListener('click', function(e) {
-                    let target = e.target;
-                    let isButton = target.closest('button');
-                    let isRadio = target.closest('[data-testid="stRadio"] label') || (target.tagName === 'INPUT' && target.type === 'radio');
-                    if (isButton || isRadio) {
-                        playClick();
-                    }
-                }, true);
-            }
-
-            // 하단 3버튼 가로 1줄 고정 강제 적용
-            setInterval(function() {
-                var marks = doc.querySelectorAll('.exam-nav-side-mark, .result-actions-mark');
-                marks.forEach(function(mark) {
-                    var block = mark.closest('[data-testid="stHorizontalBlock"]');
-                    if (block) {
-                        block.style.setProperty('display', 'flex', 'important');
-                        block.style.setProperty('flex-direction', 'row', 'important');
-                        block.style.setProperty('flex-wrap', 'nowrap', 'important');
-                        Array.from(block.children).forEach(function(col) {
-                            col.style.setProperty('width', '33.33%', 'important');
-                            col.style.setProperty('min-width', '0', 'important'); 
-                            col.style.setProperty('flex', '1 1 0', 'important');
-                            col.style.setProperty('display', 'block', 'important');
-                        });
-                    }
-                });
-            }, 300);
-        })();
-        </script>
-        """,
-        height=0, width=0
     )
 
 
 def sort_topics(cats):
     def key_fn(c):
         import re
+
         m = re.match(r"^(\d+)", c["name"] or "")
         num = int(m.group(1)) if m else 10**9
         return (num, c["name"])
+
     return sorted(cats, key=key_fn)
 
 
 def topic_mix_rows(questions: list) -> list[dict]:
+    """모의고사 문항을 주제별로 집계한다."""
     import re
     from collections import Counter, defaultdict
 
@@ -1596,7 +1412,7 @@ def view_dashboard():
     st.markdown(
         f"""
         <div style="display:flex;align-items:center;gap:0.5rem;">
-          <p class="damoa-brand" style="margin:0;">지역 경찰 실무 역량 평가 다통과</p>
+          <p class="damoa-brand" style="margin:0;">지역 경찰 실무 역량 평가 DaMoa</p>
           <span class="damoa-badge">인증됨</span>
         </div>
         """,
@@ -1614,11 +1430,9 @@ def view_dashboard():
     with greet_r:
         if st.button("로그아웃", type="secondary", key="dash_logout"):
             logout()
-            
-    # [학습 통계 분석 페이지 이동 버튼]
-    if user["email"] == "trustkimjs@police.go.kr":
-        if st.button("📊 학습 관련 통계 분석 페이지로 이동", type="primary", use_container_width=True, key="go_master_stats_page"):
-            go("master_stats")
+
+    if st.button("학습 통계 보기", type="secondary", use_container_width=True, key="go_stats_page"):
+        go("stats")
 
     active = get_active_attempt(user["id"])
     if active:
@@ -1635,7 +1449,7 @@ def view_dashboard():
             )
         with res_r:
             if st.button("이어하기", type="primary", key="dash_resume"):
-                go("exam", attempt_id=active["id"], q_index=-1, feedback=None)
+                go("exam", attempt_id=active["id"], q_index=0, feedback=None)
 
     topics_panel = st.columns(1)[0]
     with topics_panel:
@@ -1643,18 +1457,25 @@ def view_dashboard():
             f"""
             <div class="topics-panel-inner">
               <p class="topics-kicker">실무 역량 학습</p>
-              <p class="topics-hero">주제별 모의고사</p>
+              <p class="topics-hero">주제별 실무 역량 문제 풀기</p>
               <p class="topics-meta"><span>{count}개 주제</span> · 현장 대응 전 범위</p>
-              <div class="topics-mode-hints" style="grid-template-columns: 1fr;">
-                <p><strong>시험</strong> 주제별 랜덤 출제</p>
+              <div class="topics-mode-hints">
+                <p><strong>학습</strong> 문항마다 바로 해설</p>
+                <p><strong>시험</strong> 다 풀고 난 뒤 해설</p>
               </div>
             </div>
             """,
             unsafe_allow_html=True,
         )
-        st.markdown('<div class="mode-btns-mark"></div>', unsafe_allow_html=True)
-        if st.button("주제별 모의고사 시작", type="primary", use_container_width=True, key="dash_exam"):
-            go("topics", topics_mode="end")
+        m1, m2 = st.columns(2, gap="small")
+        with m1:
+            st.markdown('<div class="mode-btns-mark"></div>', unsafe_allow_html=True)
+            if st.button("학습 모드 시작", type="primary", use_container_width=True, key="dash_learn"):
+                go("topics", topics_mode="immediate")
+        with m2:
+            st.markdown('<div class="mode-btns-mark"></div>', unsafe_allow_html=True)
+            if st.button("시험 모드 시작", type="secondary", use_container_width=True, key="dash_exam"):
+                go("topics", topics_mode="end")
 
     mock_panel = st.columns(1)[0]
     with mock_panel:
@@ -1674,16 +1495,16 @@ def view_dashboard():
             if err:
                 st.error(err)
             else:
-                go("exam", attempt_id=aid, q_index=-1, feedback=None)
+                go("exam", attempt_id=aid, q_index=0, feedback=None)
 
     recent = list(recent_attempts(user["id"], limit=3))[:3]
     st.markdown(
-        '<p class="recent-heading">최근 학습 완료 현황</p>',
+        '<p class="recent-heading">최근 학습 현황</p>',
         unsafe_allow_html=True,
     )
     if not recent:
         st.markdown(
-            '<p class="recent-empty">학습 기록이 없습니다. 시험이나 모의고사를 완료하면 여기에 표시됩니다.</p>',
+            '<p class="recent-empty">학습 기록이 없습니다. 학습·시험·모의고사를 완료하면 여기에 표시됩니다.</p>',
             unsafe_allow_html=True,
         )
     else:
@@ -1725,158 +1546,222 @@ def view_dashboard():
                     go("result", attempt_id=item["id"])
 
 
-# =====================================================================
-# [학습 관련 통계 분석 페이지 뷰]
-# =====================================================================
-def view_master_stats():
-    user = require_user()
-    if user["email"] != "trustkimjs@police.go.kr":
-        go("dashboard")
+def _stat_card(label: str, value: str) -> None:
+    st.markdown(
+        f'<div style="background:#fff;border:1px solid #d7e0ea;border-radius:0.6rem;padding:0.9rem;text-align:center;">'
+        f'<p style="font-size:0.8rem;color:#5b6b7c;margin:0;">{html.escape(label)}</p>'
+        f'<p style="font-size:1.3rem;font-weight:800;color:#0b2a4a;margin:0.2rem 0 0;">{html.escape(value)}</p>'
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _render_category_stats(rows: list[dict], empty_text: str) -> None:
+    if not rows:
+        st.markdown(
+            f'<p style="font-size:0.85rem;color:#5b6b7c;padding:0.5rem 0;">{html.escape(empty_text)}</p>',
+            unsafe_allow_html=True,
+        )
         return
-        
+    for cat in rows:
+        answered = cat["answered"]
+        wrong = cat["wrong"]
+        correct = cat["correct"]
+        st.markdown(
+            f"""
+            <div style="background:#fff;border:1px solid #d7e0ea;border-radius:0.6rem;padding:0.7rem 1rem;margin-bottom:0.4rem;">
+              <div style="display:flex;justify-content:space-between;gap:0.8rem;align-items:flex-start;">
+                <div>
+                  <b>{html.escape(str(cat["categoryName"]))}</b><br>
+                  <span style="color:#5b6b7c;font-size:0.75rem;">
+                    문항 {answered}회 · 정답 {correct}회 · 오답 {wrong}회
+                    {f' · 미응답 {cat["unanswered"]}회' if cat["unanswered"] else ""}
+                  </span>
+                </div>
+                <div style="text-align:right;font-size:0.85rem;white-space:nowrap;">
+                  <div style="font-weight:800;color:#0f7a4b;">정답률 {cat["accuracy_pct"]}%</div>
+                  <div style="font-weight:700;color:#e63946;">오답률 {cat["wrong_pct"]}%</div>
+                </div>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+
+def view_stats():
+    user = require_user()
     app_shell_css()
-    
+    master = is_master_user(user)
+    if "stats_scope" not in st.session_state:
+        st.session_state.stats_scope = "me"
+
     st.markdown(
         """
-        <p class="damoa-brand">지역 경찰 실무 역량 평가 다통과</p>
-        <p class="damoa-title">📊 학습 관련 통계 분석</p>
+        <p class="damoa-brand">지역 경찰 실무 역량 평가 DaMoa</p>
+        <p class="damoa-title">학습 통계</p>
         <p class="damoa-muted" style="margin-top:0.45rem;">
-          14개 과목 전체 현황 및 수험생 최다 오답 문항 분석 리포트입니다.
+          문항 단위로 정답·오답을 집계합니다. 모의고사에서 한 과목을 한 문제만 틀려도
+          그 회차 전체를 오답으로 세던 집계는 쓰지 않습니다.
         </p>
         """,
         unsafe_allow_html=True,
     )
-    
+
     if st.button("← 홈으로 돌아가기", type="secondary", use_container_width=True, key="stats_back_home"):
         go("dashboard")
-        
-    stats = get_master_statistics()
-    if stats:
-        if stats.get("error"):
-            st.error(f"통계 조회 중 오류 발생: {stats['error']}")
-            
-        st.markdown("<div style='height:0.5rem;'></div>", unsafe_allow_html=True)
-        
-        c_m, c_t = st.columns(2, gap="small")
-        with c_m:
-            st.markdown(f'<div style="background:#fff;border:1px solid #d7e0ea;border-radius:0.6rem;padding:0.9rem;text-align:center;"><p style="font-size:0.8rem;color:#5b6b7c;margin:0;">실전 모의고사 완료</p><p style="font-size:1.3rem;font-weight:800;color:#0b2a4a;margin:0.2rem 0 0;">{stats.get("mock_attempts_count", 0)}건</p></div>', unsafe_allow_html=True)
-        with c_t:
-            st.markdown(f'<div style="background:#fff;border:1px solid #d7e0ea;border-radius:0.6rem;padding:0.9rem;text-align:center;"><p style="font-size:0.8rem;color:#5b6b7c;margin:0;">주제별 문제풀이 완료</p><p style="font-size:1.3rem;font-weight:800;color:#0b2a4a;margin:0.2rem 0 0;">{stats.get("topic_attempts_count", 0)}건</p></div>', unsafe_allow_html=True)
-        
-        st.markdown("<div style='height:1rem;'></div>", unsafe_allow_html=True)
-        
-        tab_mock, tab_topic = st.tabs(["📝 실전 모의고사 과목별 현황", "📚 주제별 문제풀이 과목별 현황"])
-        
-        with tab_mock:
-            mock_stats = stats.get("mock_category_stats", [])
-            if mock_stats:
-                with st.expander("📂 실전 모의고사 과목별 상세 현황 보기 (클릭하여 펼치기)"):
-                    for cat in mock_stats:
-                        solved = cat["total_solved"]
-                        wrong = cat["wrong_count"]
-                        wrong_pct = round((wrong / solved * 100), 1) if solved > 0 else 0
-                        st.markdown(
-                            f"""
-                            <div style="background:#fff;border:1px solid #d7e0ea;border-radius:0.6rem;padding:0.7rem 1rem;margin-bottom:0.4rem;display:flex;justify-content:space-between;align-items:center;font-size:0.85rem;">
-                              <div><b>{html.escape(str(cat['categoryName']))}</b><br><span style="color:#5b6b7c;font-size:0.75rem;">총 풀이: {solved}회 · 오답: {wrong}회</span></div>
-                              <div style="text-align:right;font-weight:700;color:#e63946;">오답률 {wrong_pct}%</div>
-                            </div>
-                            """,
-                            unsafe_allow_html=True,
-                        )
-            else:
-                st.markdown('<p style="font-size:0.85rem;color:#5b6b7c;padding:0.5rem 0;">완료된 실전 모의고사 데이터가 없습니다.</p>', unsafe_allow_html=True)
-                
-        with tab_topic:
-            topic_stats = stats.get("topic_category_stats", [])
-            if topic_stats:
-                with st.expander("📂 주제별 문제풀이 과목별 상세 현황 보기 (클릭하여 펼치기)"):
-                    for cat in topic_stats:
-                        solved = cat["total_solved"]
-                        wrong = cat["wrong_count"]
-                        wrong_pct = round((wrong / solved * 100), 1) if solved > 0 else 0
-                        st.markdown(
-                            f"""
-                            <div style="background:#fff;border:1px solid #d7e0ea;border-radius:0.6rem;padding:0.7rem 1rem;margin-bottom:0.4rem;display:flex;justify-content:space-between;align-items:center;font-size:0.85rem;">
-                              <div><b>{html.escape(str(cat['categoryName']))}</b><br><span style="color:#5b6b7c;font-size:0.75rem;">총 풀이: {solved}회 · 오답: {wrong}회</span></div>
-                              <div style="text-align:right;font-weight:700;color:#e63946;">오답률 {wrong_pct}%</div>
-                            </div>
-                            """,
-                            unsafe_allow_html=True,
-                        )
-            else:
-                st.markdown('<p style="font-size:0.85rem;color:#5b6b7c;padding:0.5rem 0;">완료된 주제별 문제풀이 데이터가 없습니다.</p>', unsafe_allow_html=True)
 
-        st.markdown("<div style='height:1rem;'></div>", unsafe_allow_html=True)
+    if master:
+        choice = st.radio(
+            "집계 범위",
+            options=["me", "all"],
+            index=0 if st.session_state.stats_scope != "all" else 1,
+            format_func=lambda v: "내 기록" if v == "me" else "전체 수험생",
+            horizontal=True,
+            key="stats_scope_radio",
+        )
+        st.session_state.stats_scope = choice
+    else:
+        st.session_state.stats_scope = "me"
 
-        st.markdown('<p style="font-weight:700;font-size:1.05rem;color:#e63946;">⚠️ 과목별 최다 오답 문항 분석 및 상세 보기 (오답 많은 순 정렬)</p>', unsafe_allow_html=True)
-        
-        all_worsts = stats.get("all_worst_questions", [])
-        if all_worsts:
-            available_cats = sorted(
-                list(set(q["categoryName"] for q in all_worsts)),
-                key=lambda s: int(re.match(r"^(\d+)", s).group(1)) if re.match(r"^(\d+)", s) else 999
-            )
-            selected_cat_filter = st.selectbox("과목(종류)을 선택하세요", options=["-- 과목을 선택해 주세요 --"] + available_cats, key="worst_q_cat_filter")
-            
-            if selected_cat_filter != "-- 과목을 선택해 주세요 --":
-                filtered_worsts = [q for q in all_worsts if q["categoryName"] == selected_cat_filter]
-                filtered_worsts = sorted(filtered_worsts, key=lambda x: (-x["wrong_count"], int(x.get("orderIndex", 9999))))
-                
-                if filtered_worsts:
-                    for idx, wq in enumerate(filtered_worsts[:15], 1):
-                        stem_text = strip_difficulty_marker(wq["stem"] or '')
-                        stem_preview = (stem_text[:70] + '...') if len(stem_text) > 70 else stem_text
-                        
-                        wq_solved = wq["total_solved"]
-                        wq_wrong = wq["wrong_count"]
-                        wq_pct = round((wq_wrong / wq_solved * 100), 1) if wq_solved > 0 else 0
-                        
-                        with st.expander(f"[{wq['categoryName']}] 오답 {wq['wrong_count']}회 / 총 풀이 {wq['total_solved']}회 (오답률 {wq_pct}%) - {stem_preview}"):
-                            st.markdown(f"**[전체 지문]**\n\n{wq['stem']}")
-                            
-                            img = image_path_for(wq.get("imagePath"))
-                            if img:
-                                st.image(str(img), use_container_width=True)
-                                
-                            choices = parse_choices(wq["choicesJson"])
-                            for ci, ctext in enumerate(choices):
-                                if ci == int(wq["answerIndex"]):
-                                    st.markdown(f"<div style='background:rgba(46,196,182,0.15);padding:0.4rem;border-radius:0.4rem;margin-bottom:0.2rem;'><b>{ci+1}. {html.escape(ctext)} (정답)</b></div>", unsafe_allow_html=True)
-                                else:
-                                    st.markdown(f"<div style='padding:0.4rem;margin-bottom:0.2rem;'>{ci+1}. {html.escape(ctext)}</div>", unsafe_allow_html=True)
-                                    
-                            if wq.get("explanation"):
-                                st.markdown(f"<div style='background:#f4f7fb;padding:0.6rem;border-radius:0.5rem;margin-top:0.5rem;'><p style='font-weight:700;margin:0 0 0.2rem;color:#0b2a4a;'>해설</p>{html.escape(wq['explanation'])}</div>", unsafe_allow_html=True)
-                            if wq.get("source"):
-                                st.caption(f"출처: {wq['source']}")
+    scope_user_id = None if (master and st.session_state.stats_scope == "all") else user["id"]
+    stats = get_learning_stats(scope_user_id)
+
+    st.markdown("<div style='height:0.5rem;'></div>", unsafe_allow_html=True)
+    cards = st.columns(4 if master and st.session_state.stats_scope == "all" else 3, gap="small")
+    with cards[0]:
+        _stat_card("실전 모의고사 완료", f"{stats['mock_attempts_count']}건")
+    with cards[1]:
+        _stat_card("주제별 풀이 완료", f"{stats['topic_attempts_count']}건")
+    with cards[2]:
+        _stat_card("문항 정답률", f"{stats['accuracy_pct']}%")
+    if master and st.session_state.stats_scope == "all" and len(cards) > 3:
+        with cards[3]:
+            _stat_card("응시자", f"{stats['examinee_count']}명")
+
+    st.caption(
+        f"채점된 문항 {stats['answered']}회 · 정답 {stats['correct']}회 · 오답 {stats['wrong']}회"
+        + (f" · 미응답 {stats['unanswered']}회" if stats["unanswered"] else "")
+        + " (오답률은 채점된 문항만 분모로 사용)"
+    )
+
+    tab_mock, tab_topic = st.tabs(["실전 모의고사 과목별", "주제별 문제풀이 과목별"])
+    with tab_mock:
+        _render_category_stats(
+            stats.get("mock_category_stats") or [],
+            "완료된 실전 모의고사 데이터가 없습니다.",
+        )
+    with tab_topic:
+        _render_category_stats(
+            stats.get("topic_category_stats") or [],
+            "완료된 주제별 문제풀이 데이터가 없습니다.",
+        )
+
+    st.markdown("<div style='height:0.8rem;'></div>", unsafe_allow_html=True)
+    st.markdown(
+        '<p style="font-weight:700;font-size:1.05rem;color:#e63946;">과목별 최다 오답 문항</p>',
+        unsafe_allow_html=True,
+    )
+
+    all_worsts = stats.get("all_worst_questions") or []
+    if not all_worsts:
+        st.markdown(
+            '<p style="font-size:0.85rem;color:#5b6b7c;">아직 집계된 오답 문항이 없습니다.</p>',
+            unsafe_allow_html=True,
+        )
+        return
+
+    available_cats = sorted(
+        {q["categoryName"] for q in all_worsts},
+        key=sort_category_name,
+    )
+    selected = st.selectbox(
+        "과목을 선택하세요",
+        options=["전체 (오답 많은 순)"] + available_cats,
+        key="worst_q_cat_filter",
+    )
+    filtered = (
+        all_worsts
+        if selected == "전체 (오답 많은 순)"
+        else [q for q in all_worsts if q["categoryName"] == selected]
+    )
+    for wq in filtered[:20]:
+        stem_text = strip_difficulty_marker(wq["stem"] or "")
+        preview = (stem_text[:70] + "...") if len(stem_text) > 70 else stem_text
+        title = (
+            f"[{wq['categoryName']}] 오답 {wq['wrong_count']}회 / "
+            f"채점 {wq['answered']}회 (오답률 {wq['wrong_pct']}%) — {preview}"
+        )
+        with st.expander(title):
+            prompt, boxed = split_boxed_stem(wq["stem"] or "")
+            st.markdown(f"**[지문]**\n\n{prompt}")
+            if boxed:
+                for item in boxed:
+                    st.markdown(f"- {item}")
+            img = image_path_for(wq.get("imagePath"))
+            if img:
+                st.image(str(img), use_container_width=True)
+            for ci, ctext in enumerate(parse_choices(wq["choicesJson"])):
+                if ci == int(wq["answerIndex"]):
+                    st.markdown(
+                        f"<div style='background:rgba(46,196,182,0.15);padding:0.4rem;border-radius:0.4rem;margin-bottom:0.2rem;'>"
+                        f"<b>{ci+1}. {html.escape(ctext)} (정답)</b></div>",
+                        unsafe_allow_html=True,
+                    )
                 else:
-                    st.markdown('<p style="font-size:0.85rem;color:#5b6b7c;padding-top:0.4rem;">선택한 과목에 해당하는 오답 기록이 없습니다.</p>', unsafe_allow_html=True)
-            else:
-                st.markdown('<p style="font-size:0.85rem;color:#5b6b7c;padding-top:0.4rem;">상단의 셀렉트박스에서 과목을 선택하시면 해당 과목의 오답 문항 분석이 표시됩니다.</p>', unsafe_allow_html=True)
-        else:
-            st.markdown('<p style="font-size:0.85rem;color:#5b6b7c;">아직 집계된 오답 문제 데이터가 없습니다.</p>', unsafe_allow_html=True)
+                    st.markdown(
+                        f"<div style='padding:0.4rem;margin-bottom:0.2rem;'>{ci+1}. {html.escape(ctext)}</div>",
+                        unsafe_allow_html=True,
+                    )
+            if wq.get("explanation"):
+                st.markdown(
+                    f"<div style='background:#f4f7fb;padding:0.6rem;border-radius:0.5rem;margin-top:0.5rem;'>"
+                    f"<p style='font-weight:700;margin:0 0 0.2rem;color:#0b2a4a;'>해설</p>"
+                    f"{html.escape(wq['explanation'])}</div>",
+                    unsafe_allow_html=True,
+                )
+            if wq.get("source"):
+                st.caption(f"출처: {wq['source']}")
 
 
 def view_topics():
     user = require_user()
     app_shell_css()
-    mode = "end"
+    mode = st.session_state.topics_mode
+    is_learn = mode == "immediate"
 
     st.markdown(
         f"""
-        <p class="damoa-brand">지역 경찰 실무 역량 평가 다통과</p>
-        <p class="damoa-title">주제별 모의고사</p>
+        <p class="damoa-brand">지역 경찰 실무 역량 평가 DaMoa</p>
+        <p class="damoa-title">주제별 실무 역량 문제 풀기</p>
         <p class="damoa-muted" style="margin-top:0.45rem;">
-          제한 시간 안에 주제별 랜덤 출제로 진행되며, 다 풀고 난 뒤에 해설을 제공합니다.
+          {"학습 모드: 문항마다 해설을 제공합니다." if is_learn else "시험 모드: 문항을 다 풀고 난 뒤에 해설을 제공합니다."}
         </p>
         """,
         unsafe_allow_html=True,
     )
 
-    st.markdown('<div class="topics-chips-mark"></div>', unsafe_allow_html=True)
-    if st.button("← 홈으로 돌아가기", type="secondary", use_container_width=True, key="topics_home"):
-        go("dashboard")
+    chip1, chip2, chip3 = st.columns(3, gap="small")
+    with chip1:
+        st.markdown('<div class="topics-chips-mark"></div>', unsafe_allow_html=True)
+        if st.button(
+            "학습 모드",
+            type="primary" if is_learn else "secondary",
+            use_container_width=True,
+            key="topics_chip_learn",
+        ):
+            go("topics", topics_mode="immediate")
+    with chip2:
+        if st.button(
+            "시험 모드",
+            type="primary" if not is_learn else "secondary",
+            use_container_width=True,
+            key="topics_chip_exam",
+        ):
+            go("topics", topics_mode="end")
+    with chip3:
+        if st.button("홈으로", type="secondary", use_container_width=True, key="topics_home"):
+            go("dashboard")
 
     active = get_active_attempt(user["id"])
     if active:
@@ -1893,11 +1778,11 @@ def view_topics():
             )
         with res_r:
             if st.button("이어하기", type="primary", key="topics_resume"):
-                go("exam", attempt_id=active["id"], q_index=-1, feedback=None)
+                go("exam", attempt_id=active["id"], q_index=0, feedback=None)
 
     cats = sort_topics(topic_categories())
     total_all = sum(int(c["questionCount"]) for c in cats)
-    all_label = "전체 시험 보기"
+    all_label = "전체 학습하기" if is_learn else "전체 시험 보기"
 
     all_card = st.columns(1)[0]
     with all_card:
@@ -1920,14 +1805,15 @@ def view_topics():
                 if err:
                     st.error(err)
                 else:
-                    go("exam", attempt_id=aid, q_index=-1, feedback=None)
+                    go("exam", attempt_id=aid, q_index=0, feedback=None)
 
+    # 2-column topic cards (문구 + 버튼 한 줄)
     for i in range(0, len(cats), 2):
         cols = st.columns(2, gap="small")
         for col, cat in zip(cols, cats[i : i + 2]):
             n = int(cat["questionCount"])
-            order = "랜덤 출제"
-            btn = "시험 보기"
+            order = "원본 순서" if is_learn else "랜덤 출제"
+            btn = "학습하기" if is_learn else "시험 보기"
             with col:
                 t_txt, t_btn = st.columns([1, 0.38], gap="small")
                 with t_txt:
@@ -1953,7 +1839,7 @@ def view_topics():
                         if err:
                             st.error(err)
                         else:
-                            go("exam", attempt_id=aid, q_index=-1, feedback=None)
+                            go("exam", attempt_id=aid, q_index=0, feedback=None)
 
 
 def view_exam():
@@ -1972,15 +1858,12 @@ def view_exam():
     if attempt["status"] == "submitted":
         go("result", attempt_id=attempt_id)
 
-    is_learn_mode = attempt["revealMode"] == "immediate"
-
-    if not is_learn_mode and is_time_expired(attempt):
+    if is_time_expired(attempt):
         submit_exam(attempt_id, user["id"])
         st.warning("제한 시간이 종료되어 자동 제출되었습니다.")
         go("result", attempt_id=attempt_id)
 
-    if st.session_state.q_index == -1:
-        st.session_state.q_index = 0
+    if st.session_state.q_index == 0 and st.session_state.feedback is None:
         for i, q in enumerate(questions):
             if q["userAnswer"] is None:
                 st.session_state.q_index = i
@@ -1992,10 +1875,13 @@ def view_exam():
     ends = attempt_ends_at(attempt)
     remain_sec = max(0, int((ends - datetime.now(timezone.utc)).total_seconds()))
     mm, ss = divmod(remain_sec, 60)
-    
+    is_learn_mode = attempt["revealMode"] == "immediate"
     if attempt["kind"] == "mock":
         mode_label = "모의고사"
         mode_cls = "is-mock"
+    elif is_learn_mode:
+        mode_label = "학습 모드"
+        mode_cls = "is-learn"
     else:
         mode_label = "시험 모드"
         mode_cls = "is-exam"
@@ -2005,23 +1891,18 @@ def view_exam():
         if attempt["kind"] != "mock"
         else ""
     )
-    
-    timer_display = (
-        '<div id="realtime-timer" class="timer-pill">남은 시간 {mm:02d}:{ss:02d}</div>'
-    )
-
     st.markdown(
         f"""
         <div class="exam-page-top exam-top" id="exam-page-top">
           <div>
             <p class="damoa-brand" style="margin:0;">
-              지역 경찰 실무 역량 평가 다통과
+              지역 경찰 실무 역량 평가 DaMoa
               <span class="exam-mode-tag {mode_cls}">· {mode_label}</span>
             </p>
             <p style="margin:0.4rem 0 0;color:#0b2a4a;font-weight:700;">진행 {answered}/{attempt["totalCount"]}</p>
             {cat_line}
           </div>
-          {timer_display}
+          <div class="timer-pill">남은 시간 {mm:02d}:{ss:02d}</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -2040,8 +1921,9 @@ def view_exam():
         st.image(str(img), use_container_width=True)
 
     choices = parse_choices(q["choicesJson"])
+    is_learn = attempt["revealMode"] == "immediate"
     is_last = idx >= len(questions) - 1
-    locked = is_learn_mode and q["userAnswer"] is not None
+    locked = is_learn and q["userAnswer"] is not None
     current = int(q["userAnswer"]) if q["userAnswer"] is not None else None
 
     selected = st.radio(
@@ -2055,21 +1937,23 @@ def view_exam():
     )
 
     if selected is not None and not locked and selected != current:
-        
         ok, msg, feedback = save_answer(attempt_id, user["id"], q["id"], selected)
-        
         if ok:
             st.session_state.feedback = feedback
-            if not is_last:
-                st.session_state.q_index = idx + 1
-                st.session_state.feedback = None
-            request_scroll_top()
+            if is_learn:
+                request_scroll_to(".exam-feedback-anchor", block="center")
+            else:
+                # 시험보기/모의고사: 보기 클릭 시 다음 문제 상단으로
+                if not is_last:
+                    st.session_state.q_index = idx + 1
+                    st.session_state.feedback = None
+                request_scroll_top()
             st.rerun()
         else:
             st.error(msg)
 
     feedback = st.session_state.feedback
-    if is_learn_mode and (feedback or (locked and q["userAnswer"] is not None)):
+    if is_learn and (feedback or (locked and q["userAnswer"] is not None)):
         if not feedback and locked:
             feedback = {
                 "isCorrect": int(q["userAnswer"]) == int(q["answerIndex"]),
@@ -2096,19 +1980,16 @@ def view_exam():
             if feedback.get("source"):
                 st.caption(f"출처: {feedback['source']}")
 
-    nav_l, nav_m, nav_r = st.columns(3, gap="small")
-    
-    with nav_l:
-        st.markdown('<div class="exam-nav-side-mark"></div>', unsafe_allow_html=True)
-        if st.button("이전", disabled=idx <= 0, use_container_width=True, type="secondary", key="exam_prev"):
-            st.session_state.q_index = idx - 1
-            st.session_state.feedback = None
-            request_scroll_top()
-            st.rerun()
-            
-    with nav_m:
-        next_label = "제출하기" if is_last else "다음"
-        if st.button(next_label, type="secondary", use_container_width=True, key="exam_next_mid"):
+    # 학습 모드: 다음/학습 종료 / 시험 모드: 마지막 문항만 제출하기 (다음 버튼 없음)
+    show_primary = is_learn or is_last
+    if show_primary:
+        next_label = (
+            ("학습 종료" if is_learn else "제출하기")
+            if is_last
+            else "다음"
+        )
+        st.markdown('<div class="exam-nav-next-mark"></div>', unsafe_allow_html=True)
+        if st.button(next_label, type="primary", use_container_width=True, key="exam_next"):
             if is_last:
                 _, qs2 = load_exam(attempt_id, user["id"])
                 unanswered = sum(1 for x in qs2 if x["userAnswer"] is None)
@@ -2124,52 +2005,18 @@ def view_exam():
                 st.session_state.feedback = None
                 request_scroll_top()
                 st.rerun()
-                
-    with nav_r:
+
+    side_l, side_r = st.columns(2, gap="small")
+    with side_l:
+        st.markdown('<div class="exam-nav-side-mark"></div>', unsafe_allow_html=True)
+        if st.button("이전", disabled=idx <= 0, use_container_width=True, type="secondary", key="exam_prev"):
+            st.session_state.q_index = idx - 1
+            st.session_state.feedback = None
+            request_scroll_top()
+            st.rerun()
+    with side_r:
         if st.button("홈으로", use_container_width=True, type="secondary", key="exam_home"):
             go("dashboard")
-
-    if not is_learn_mode:
-        components.html(
-            f"""
-            <script>
-            (function() {{
-                let doc = document;
-                let win = window;
-                try {{
-                    if (window.parent && window.parent.document) {{
-                        doc = window.parent.document;
-                        win = window.parent;
-                    }}
-                }} catch (e) {{}} 
-                
-                if (win.examTimerInterval) {{
-                    clearInterval(win.examTimerInterval);
-                }}
-                
-                const endsAt = {ends.timestamp()} * 1000;
-                win.examTimerInterval = setInterval(function() {{
-                    const el = doc.getElementById('realtime-timer');
-                    if (!el) return;
-                    
-                    let remain = Math.floor((endsAt - Date.now()) / 1000);
-                    if (remain < 0) remain = 0;
-                    
-                    let m = String(Math.floor(remain / 60)).padStart(2, '0');
-                    let s = String(remain % 60).padStart(2, '0');
-                    el.innerText = "남은 시간 " + m + ":" + s;
-                    
-                    if (remain <= 0) {{
-                        el.style.backgroundColor = "#e63946";
-                        el.style.color = "white";
-                        clearInterval(win.examTimerInterval);
-                    }}
-                }}, 1000);
-            }})();
-            </script>
-            """,
-            height=0, width=0
-        )
 
 
 def view_result():
@@ -2186,6 +2033,7 @@ def view_result():
     if attempt["status"] != "submitted":
         go("exam", attempt_id=attempt_id)
 
+    # 다른 결과로 들어오면 필터/출제 현황 초기화
     if st.session_state.get("_result_filter_attempt") != attempt_id:
         st.session_state._result_filter_attempt = attempt_id
         reset_result_filters()
@@ -2193,12 +2041,10 @@ def view_result():
     score = attempt["score"] or 0
     total = attempt["totalCount"]
     pct = round(score / total * 100) if total else 0
-    
-    questions = sorted(questions, key=lambda x: int(x.get("orderIndex", 0)))
     wrongs = [q for q in questions if not q["isCorrect"]]
 
     st.markdown(
-        '<p class="damoa-brand">지역 경찰 실무 역량 평가 다통과</p>',
+        '<p class="damoa-brand">지역 경찰 실무 역량 평가 DaMoa</p>',
         unsafe_allow_html=True,
     )
     st.markdown(
@@ -2243,7 +2089,7 @@ def view_result():
                 if err:
                     st.error(err)
                 else:
-                    go("exam", attempt_id=aid, q_index=-1, feedback=None)
+                    go("exam", attempt_id=aid, q_index=0, feedback=None)
         with c3:
             if st.button(
                 "다시 응시하기",
@@ -2261,7 +2107,7 @@ def view_result():
                 if err:
                     st.error(err)
                 else:
-                    go("exam", attempt_id=aid, q_index=-1, feedback=None)
+                    go("exam", attempt_id=aid, q_index=0, feedback=None)
 
     result_action_row("result_top")
 
@@ -2395,7 +2241,14 @@ def view_result():
 
 def main():
     init_state()
-    restore_user_from_url()
+    try:
+        if st.query_params.get("keepalive") == "1":
+            st.write("ok")
+            st.stop()
+    except Exception:
+        pass
+    flush_auth_cookie()
+    restore_user_from_cookie()
     view = st.session_state.view
     if st.session_state.user and view in {"login", "register"}:
         view = "dashboard"
@@ -2409,13 +2262,13 @@ def main():
         "reset": view_reset,
         "mail_setup": view_mail_setup,
         "dashboard": view_dashboard,
+        "stats": view_stats,
         "topics": view_topics,
         "exam": view_exam,
         "result": view_result,
-        "master_stats": view_master_stats,
     }
     routes.get(view, view_login)()
-        
+    # 화면 렌더 이후에 스크롤해야 Streamlit이 스크롤을 되돌리는 걸 막을 수 있다.
     flush_scroll_top()
 
 
