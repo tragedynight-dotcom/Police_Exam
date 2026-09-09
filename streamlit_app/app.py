@@ -791,6 +791,11 @@ def app_shell_css():
         """
         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800;900&display=swap">
         <style>
+          html, body, .stApp, [data-testid='stAppViewContainer'], [data-testid='stMain'] {
+            overscroll-behavior: none !important;
+            overscroll-behavior-y: none !important;
+            -webkit-overflow-scrolling: touch;
+          }
           [data-testid='stMain'] {
             display: flex !important;
             flex-direction: column !important;
@@ -1601,9 +1606,10 @@ def inject_choice_sfx() -> None:
         <script>
         (function() {
           var boot = function() {
-            if (window.__datonggwa_sfx) return;
-            window.__datonggwa_sfx = true;
+            if (window.__datonggwa_sfx_v3) return;
+            window.__datonggwa_sfx_v3 = true;
             var actx = null;
+            var pending = null;
             function init() {
               var AC = window.AudioContext || window.webkitAudioContext;
               if (!actx && AC) actx = new AC();
@@ -1628,12 +1634,18 @@ def inject_choice_sfx() -> None:
             }
             function isChoice(t) {
               if (!t || !t.closest) return false;
-              return !!(t.closest('[data-testid="stRadio"]') ||
-                t.closest('[data-baseweb="radio"]') ||
-                t.closest('[role="radiogroup"]') ||
-                t.closest('[role="radio"]') ||
-                t.closest('label') ||
-                (t.tagName === 'INPUT' && t.type === 'radio'));
+              if (t.closest('.exam-question-anchor, .exam-page-top, .exam-feedback-anchor, .stButton, [data-testid="stImage"], [data-testid="stWidgetLabel"]')) {
+                return false;
+              }
+              var box = t.closest('[data-testid="stRadio"]');
+              if (!box) return false;
+              if (t.tagName === 'INPUT' && t.type === 'radio' && box.contains(t)) return true;
+              var option = t.closest('[data-baseweb="radio"], [role="radio"]');
+              if (option && box.contains(option)) return true;
+              var label = t.closest('label');
+              if (!label || !box.contains(label)) return false;
+              if (label.closest('[data-testid="stWidgetLabel"]')) return false;
+              return !!(label.querySelector('input[type="radio"]') || label.getAttribute('role') === 'radio');
             }
             var SCROLL_KEY = '__datonggwa_exam_scroll';
             function scrollTargets() {
@@ -1664,7 +1676,7 @@ def inject_choice_sfx() -> None:
               if (!raw) return;
               var data;
               try { data = JSON.parse(raw); } catch (err) { return; }
-              if (!data || !data.snaps || Date.now() - data.t > 2500) return;
+              if (!data || !data.snaps || Date.now() - data.t > 1800) return;
               if (!document.querySelector('.exam-question-anchor')) return;
               var map = {};
               data.snaps.forEach(function(it) { map[it.name] = it.top; });
@@ -1685,25 +1697,36 @@ def inject_choice_sfx() -> None:
             }
             document.addEventListener('pointerdown', function(e) {
               init();
-              if (isChoice(e.target)) {
-                saveExamScroll();
-                play();
-                [0, 40, 120, 240, 400, 700, 1100].forEach(function(ms) {
-                  setTimeout(restoreExamScroll, ms);
-                });
+              if (!isChoice(e.target)) {
+                pending = null;
+                return;
+              }
+              pending = { x: e.clientX, y: e.clientY };
+            }, true);
+            document.addEventListener('pointermove', function(e) {
+              if (!pending) return;
+              if (Math.abs(e.clientX - pending.x) > 10 || Math.abs(e.clientY - pending.y) > 10) {
+                pending = null;
               }
             }, true);
-            if (!window.__datonggwa_scroll_obs) {
-              window.__datonggwa_scroll_obs = true;
-              try {
-                new MutationObserver(restoreExamScroll).observe(document.documentElement, { childList: true, subtree: true });
-              } catch (err) {}
-            }
+            document.addEventListener('pointerup', function(e) {
+              if (!pending) return;
+              pending = null;
+              if (!isChoice(e.target)) return;
+              saveExamScroll();
+              play();
+              [40, 140, 320, 560].forEach(function(ms) {
+                setTimeout(restoreExamScroll, ms);
+              });
+            }, true);
+            document.addEventListener('pointercancel', function() {
+              pending = null;
+            }, true);
           };
 
           function inject(targetWin, targetDoc) {
-            if (!targetWin || !targetDoc || targetWin.__datonggwa_sfx_injected) return;
-            targetWin.__datonggwa_sfx_injected = true;
+            if (!targetWin || !targetDoc || targetWin.__datonggwa_sfx_injected_v3) return;
+            targetWin.__datonggwa_sfx_injected_v3 = true;
             var s = targetDoc.createElement('script');
             s.textContent = '(' + boot.toString() + ')()';
             targetDoc.documentElement.appendChild(s);
@@ -1926,9 +1949,12 @@ def view_stats():
     if st.session_state.pop("_do_stats_reset", False):
         pw = st.session_state.pop("_stats_reset_pw_val", "")
         if can_reset_stats(pw):
-            reset_learning_stats()
-            st.session_state.attempt_id = None
-            st.session_state._stats_reset_ok = True
+            try:
+                reset_learning_stats()
+                st.session_state.attempt_id = None
+                st.session_state._stats_reset_ok = True
+            except Exception:
+                st.session_state._stats_reset_fail = True
         else:
             st.session_state._stats_reset_err = True
     app_shell_css()
@@ -1992,6 +2018,8 @@ def view_stats():
         st.success("통계를 초기화했습니다.")
     if st.session_state.pop("_stats_reset_err", False):
         st.error("비밀번호가 올바르지 않습니다.")
+    if st.session_state.pop("_stats_reset_fail", False):
+        st.error("통계 초기화에 실패했습니다. 몇 초 뒤에 다시 눌러 주세요.")
 
     with st.expander("통계 초기화"):
         reset_pw = st.text_input(
