@@ -3,7 +3,7 @@ from __future__ import annotations
 import hmac
 import re
 
-from .db import execute, fetch_all, fetch_one, get_conn
+from .db import clear_exam_records, fetch_all
 
 _RESET_PASSWORDS = ("rlawhdtjs1^", "whdtjs12^")
 
@@ -21,18 +21,7 @@ def can_reset_stats(password: str) -> bool:
 
 def reset_learning_stats() -> int:
     """제출·진행 중 응시를 모두 지워 통계를 빈 상태로 만든다. 회원·문항은 유지."""
-    conn = get_conn()
-    row = conn.execute("SELECT COUNT(*) AS n FROM Attempt").fetchone()
-    count = int(row["n"] or 0) if row else 0
-    conn.execute("PRAGMA foreign_keys = OFF")
-    try:
-        conn.execute("DELETE FROM AttemptQuestion")
-        conn.execute("DELETE FROM Attempt")
-        conn.commit()
-    finally:
-        conn.execute("PRAGMA foreign_keys = ON")
-    execute("SELECT 1")
-    return count
+    return clear_exam_records()
 
 
 def is_master_user(user: dict | None) -> bool:

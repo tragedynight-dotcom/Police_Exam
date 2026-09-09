@@ -5,6 +5,7 @@ import json
 import os
 import sqlite3
 import threading
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -18,6 +19,7 @@ _schema_ready = False
 _pulled = False
 _push_timer: threading.Timer | None = None
 _push_lock = threading.Lock()
+_write_lock = threading.Lock()
 
 _SCHEMA_SQL = [
     """
@@ -316,8 +318,9 @@ def get_conn() -> sqlite3.Connection:
             print(f"[damoa] GitHub DB 불러오기 실패: {exc}", flush=True)
 
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    _conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
+    _conn = sqlite3.connect(str(DB_PATH), check_same_thread=False, timeout=15)
     _conn.row_factory = sqlite3.Row
+    _conn.execute("PRAGMA busy_timeout = 8000")
     _conn.execute("PRAGMA foreign_keys = ON")
     _ensure_schema(_conn)
     return _conn
@@ -335,13 +338,68 @@ def fetch_all(sql: str, params: tuple = ()) -> list:
 
 def execute(sql: str, params: tuple = ()) -> None:
     conn = get_conn()
-    conn.execute(sql, params)
-    conn.commit()
+    with _write_lock:
+        conn.execute(sql, params)
+        conn.commit()
     _schedule_push()
 
 
 def executemany(sql: str, params_seq: list[tuple]) -> None:
     conn = get_conn()
-    conn.executemany(sql, params_seq)
-    conn.commit()
+    with _write_lock:
+        conn.executemany(sql, params_seq)
+        conn.commit()
     _schedule_push()
+
+
+def clear_exam_records() -> int:
+    """응시·문항 답안만 지운다. 회원과 문제는 유지한다."""
+    global _schema_ready
+    conn = get_conn()
+    last_err: Exception | None = None
+    count = 0
+    with _write_lock:
+        try:
+            row = conn.execute('SELECT COUNT(*) AS n FROM "Attempt"').fetchone()
+            count = int(row["n"] or 0) if row else 0
+        except sqlite3.OperationalError:
+            count = 0
+        for _ in range(4):
+            try:
+                conn.execute("PRAGMA busy_timeout = 8000")
+                conn.execute("PRAGMA foreign_keys = OFF")
+                conn.execute('DELETE FROM "AttemptQuestion"')
+                conn.execute('DELETE FROM "Attempt"')
+                conn.commit()
+                last_err = None
+                break
+            except sqlite3.OperationalError as exc:
+                last_err = exc
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                time.sleep(0.35)
+        if last_err is not None:
+            try:
+                conn.execute("PRAGMA foreign_keys = OFF")
+                conn.execute('DROP TABLE IF EXISTS "AttemptQuestion"')
+                conn.execute('DROP TABLE IF EXISTS "Attempt"')
+                conn.commit()
+                _schema_ready = False
+                _ensure_schema(conn)
+                last_err = None
+            except sqlite3.OperationalError as exc:
+                last_err = exc
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+        try:
+            conn.execute("PRAGMA foreign_keys = ON")
+        except Exception:
+            pass
+    if last_err is not None:
+        raise last_err
+    _schedule_push()
+    return count
