@@ -315,6 +315,104 @@ def _as_row(cursor, row):
     return dict(zip(cols, row))
 
 
+def _apply_question_corrections(conn: sqlite3.Connection) -> None:
+    """한글 원본과 맞춰 정답·해설이 밀린 문항을 고친다."""
+    try:
+        rows = conn.execute(
+            'SELECT id, stem, answerIndex, explanation FROM "Question"'
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return
+    if not rows:
+        return
+
+    dv3_exp = (
+        "1. 수사기관에 피해사실을 진술하거나 관련 자료를 제출할 수 있는 권리 "
+        "- 고소의 특례(法제6조)를 알린다 "
+        "- 피해자가 즉시 처벌을 원하지 않더라도 이후에 행위자를 고소할 수 있다는 점을 알려준다. "
+        "2. 수사 절차와 진행 상황을 통보받을 권리 "
+        "- 피해자에게 사법경찰이 응급조치, 긴급임시조치, 임시조치를 취할 수 있다는 점을 고지한다. "
+        "- 피해자 또는 법정 대리인이 직접 법원에 퇴거, 접근금지, 친권 제한 등 "
+        "｢피해자보호명령 제도｣를 요청할 수 있다는 점을 고지한다. "
+        "3. 보호시설과 상담 지원을 신청할 권리 "
+        "- 가정폭력 관련 상담소 및 보호시설 인도를 요구할 수 있다. "
+        "- 정신적 피해 및 보호를 위한 상담소 등의 기관안내 및 연락처를 안내받을 수 있다. "
+        "4. 경제적 지원을 신청할 권리 "
+        "- 피해자가 사망하거나 장해를 입은 경우 담당 경찰관은 유족구조금, 장해구조금을 "
+        "지급해 주는 지방검찰청 피해자지원 전담관을 연결해 지원받을 수 있다 "
+        "5. 개인정보를 보호받을 권리 "
+        "- 피해자의 동의 없이 신상정보를 공개하지 않는다"
+    )
+    dv1_exp = (
+        "가정폭력범죄의 처벌 등에 관한 특례 제66조(과태료) 다음 각호의 어느 하나에 해당하는 "
+        "사람에게는 300만원 이하의 과태료를 부과한다. 1. 정당한 사유 없이 제4조 제2항각호의 "
+        "어느 하나에 해당하는 사람으로서 그 직무를 수행하면서 가정폭력범죄를 알게 된 경우에도 "
+        "신고하지 아니한 사람 2. 정당한 사유 없이 제8조의2 제1항에 따른 긴급임시조치(검사가 "
+        "제8조의3 제1항에 따른 임시조치를 청구하지 아니하거나 법원이 임시조치의 결정을 하지 "
+        "아니한 때는 제외한다)를 이행하지 아니한 사람[전문개정 2014. 12. 30.]"
+    )
+    dv5_exp = (
+        "손실이 있음을 안 날로부터 3년, 손실이 발생한 날부터 5년 이내에 행사하지 않으면 "
+        "시효의 완성으로 소멸"
+    )
+    dui3_exp = (
+        "단순히 화를 내며 측정을 거부한 것은 상황에 따라 객관적이고 진정한 의사표시에 의한 "
+        "거부로 볼 수 없을 가능성이 있다는 판례의 취지입 "
+        "3번: 측정시도 3회 이상이 아니라 음주측정 불응에 따른 불이익을 5분 간격으로 3회 이상 고지 "
+        "1번: 물을 많이 주는 경찰의 인심이 후하다고 볼 수 있으나 경찰단속의 신뢰성과 공정성의 훼손 우려 "
+        "2번: 형사·행정소송 관련 많이 제기되는 요소로 이의제기 차단을 위해 입에 물었던 불대는 "
+        "1회 사용으로 적용"
+    )
+    update = conn.execute
+    changed = False
+    for row in rows:
+        qid = row["id"] if isinstance(row, sqlite3.Row) else row[0]
+        stem = row["stem"] if isinstance(row, sqlite3.Row) else row[1]
+        text = stem or ""
+        if "메신저 피싱" in text and "옳지" in text:
+            update(
+                'UPDATE "Question" SET answerIndex = 2 WHERE id = ?',
+                (qid,),
+            )
+            changed = True
+        elif "긴급임시조치의 유형" in text and "불이행" in text:
+            update(
+                'UPDATE "Question" SET explanation = ? WHERE id = ?',
+                (dv1_exp, qid),
+            )
+            changed = True
+        elif "가정폭력 처벌법 제2조" in text and "가정폭력 유형" in text:
+            marker = "다음 중 가정폭력 처벌법 제2조"
+            idx = text.find(marker)
+            new_stem = text[idx:] if idx >= 0 else text
+            update(
+                'UPDATE "Question" SET stem = ? WHERE id = ?',
+                (new_stem, qid),
+            )
+            changed = True
+        elif "가정폭력 신고현장에 출동한 경찰관" in text:
+            update(
+                'UPDATE "Question" SET answerIndex = 2, explanation = ? WHERE id = ?',
+                (dv3_exp, qid),
+            )
+            changed = True
+        elif "손실보상 지급요건" in text:
+            update(
+                'UPDATE "Question" SET answerIndex = 3, explanation = ? WHERE id = ?',
+                (dv5_exp, qid),
+            )
+            changed = True
+        elif "음주운전 처리 절차와 관련하여" in text:
+            new_stem = text.replace("가장 적절한 것은", "가장 올바른 것은")
+            update(
+                'UPDATE "Question" SET stem = ?, explanation = ? WHERE id = ?',
+                (new_stem, dui3_exp, qid),
+            )
+            changed = True
+    if changed:
+        conn.commit()
+
+
 def _ensure_schema(conn: sqlite3.Connection) -> None:
     global _schema_ready
     if _schema_ready:
@@ -334,6 +432,10 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             )
     except Exception:
         pass
+    try:
+        _apply_question_corrections(conn)
+    except Exception as exc:
+        print(f"[damoa] 문항 정오 반영 실패: {exc}", flush=True)
     conn.commit()
     _schema_ready = True
 
