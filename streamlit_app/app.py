@@ -91,7 +91,8 @@ st.set_page_config(
     page_icon="🛡️",
     layout="wide",
     initial_sidebar_state="collapsed",
-)  # 문항 정오 반영 2026-10-07
+    menu_items={"about": "문항 정오 2026-10-07c"},
+)
 
 _CSS = (Path(__file__).resolve().parent / "styles.css").read_text(encoding="utf-8")
 # markdown sanitizer can leak CSS as text; st.html injects safely

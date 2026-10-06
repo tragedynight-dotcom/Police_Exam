@@ -21,6 +21,7 @@ _push_timer: threading.Timer | None = None
 _push_lock = threading.Lock()
 _write_lock = threading.Lock()
 _resolved_db_path: Path | None = None
+QUESTION_PATCH_VERSION = "2026-10-07c"
 
 
 def get_db_path() -> Path:
@@ -33,6 +34,7 @@ def get_db_path() -> Path:
     if on_cloud:
         dest = Path(tempfile.gettempdir()) / "datonggwa" / "dev.db"
         dest.parent.mkdir(parents=True, exist_ok=True)
+        # 예전 /tmp DB가 남아 있어도, GitHub 기록이 없으면 저장소 문항을 쓴다.
         if repo_db.exists() and not dest.exists():
             dest.write_bytes(repo_db.read_bytes())
         _resolved_db_path = dest
@@ -315,8 +317,40 @@ def _as_row(cursor, row):
     return dict(zip(cols, row))
 
 
+def _meta_get(conn: sqlite3.Connection, key: str) -> str:
+    try:
+        conn.execute(
+            'CREATE TABLE IF NOT EXISTS "AppMeta" ("key" TEXT PRIMARY KEY, "value" TEXT)'
+        )
+        row = conn.execute(
+            'SELECT value FROM "AppMeta" WHERE key = ?', (key,)
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return ""
+    if row is None:
+        return ""
+    if isinstance(row, sqlite3.Row):
+        return str(row["value"] or "")
+    return str(row[0] or "")
+
+
+def _meta_set(conn: sqlite3.Connection, key: str, value: str) -> None:
+    conn.execute(
+        'CREATE TABLE IF NOT EXISTS "AppMeta" ("key" TEXT PRIMARY KEY, "value" TEXT)'
+    )
+    conn.execute(
+        """
+        INSERT INTO "AppMeta"("key", "value") VALUES(?, ?)
+        ON CONFLICT("key") DO UPDATE SET "value" = excluded."value"
+        """,
+        (key, value),
+    )
+
+
 def _apply_question_corrections(conn: sqlite3.Connection) -> bool:
-    """한글 원본과 맞춰 정답·해설이 밀린 문항을 고친다."""
+    """한글 원본과 맞춰 정답·해설이 밀린 문항을 고친다. 지문·번호 둘 다 본다."""
+    if _meta_get(conn, "qpatch") == QUESTION_PATCH_VERSION:
+        return False
     try:
         rows = conn.execute(
             """
@@ -326,7 +360,12 @@ def _apply_question_corrections(conn: sqlite3.Connection) -> bool:
             """
         ).fetchall()
     except sqlite3.OperationalError:
-        return False
+        try:
+            rows = conn.execute(
+                'SELECT id, stem, sourceOrder, "" AS categoryName FROM "Question"'
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return False
     if not rows:
         return False
 
@@ -367,22 +406,28 @@ def _apply_question_corrections(conn: sqlite3.Connection) -> bool:
         "2번: 형사·행정소송 관련 많이 제기되는 요소로 이의제기 차단을 위해 입에 물었던 불대는 "
         "1회 사용으로 적용"
     )
+
+    def _hit(cat: str, n: int, prefix: str, order: int, text: str, *needles: str) -> bool:
+        if cat.startswith(prefix) and n == order:
+            return True
+        return any(needle in text for needle in needles)
+
     changed = 0
     for row in rows:
         qid = row["id"]
         stem = row["stem"] or ""
         cat = row["categoryName"] or ""
         n = int(row["sourceOrder"] or 0)
-        if cat.startswith("6.") and n == 9:
+        if _hit(cat, n, "6.", 9, stem, "메신저 피싱") and "옳지" in stem:
             conn.execute('UPDATE "Question" SET answerIndex = 2 WHERE id = ?', (qid,))
             changed += 1
-        elif cat.startswith("8.") and n == 1:
+        elif _hit(cat, n, "8.", 1, stem, "긴급임시조치의 유형") and "불이행" in stem:
             conn.execute(
                 'UPDATE "Question" SET explanation = ? WHERE id = ?',
                 (dv1_exp, qid),
             )
             changed += 1
-        elif cat.startswith("8.") and n == 2:
+        elif _hit(cat, n, "8.", 2, stem, "가정폭력 처벌법 제2조"):
             marker = "다음 중 가정폭력 처벌법 제2조"
             idx = stem.find(marker)
             if idx > 0:
@@ -391,26 +436,27 @@ def _apply_question_corrections(conn: sqlite3.Connection) -> bool:
                     (stem[idx:], qid),
                 )
                 changed += 1
-        elif cat.startswith("8.") and n == 3:
+        elif _hit(cat, n, "8.", 3, stem, "가정폭력 신고현장에 출동한"):
             conn.execute(
                 'UPDATE "Question" SET answerIndex = 2, explanation = ? WHERE id = ?',
                 (dv3_exp, qid),
             )
             changed += 1
-        elif cat.startswith("8.") and n == 5:
+        elif _hit(cat, n, "8.", 5, stem, "손실보상 지급요건"):
             conn.execute(
                 'UPDATE "Question" SET answerIndex = 3, explanation = ? WHERE id = ?',
                 (dv5_exp, qid),
             )
             changed += 1
-        elif cat.startswith("13.") and n == 3:
+        elif _hit(cat, n, "13.", 3, stem, "음주운전 처리 절차와 관련하여"):
             conn.execute(
                 'UPDATE "Question" SET stem = ?, explanation = ? WHERE id = ?',
                 (stem.replace("가장 적절한 것은", "가장 올바른 것은"), dui3_exp, qid),
             )
             changed += 1
+    _meta_set(conn, "qpatch", QUESTION_PATCH_VERSION)
+    conn.commit()
     if changed:
-        conn.commit()
         print(f"[damoa] 문항 정오 {changed}건을 반영했습니다.", flush=True)
     return changed > 0
 
@@ -434,13 +480,16 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             )
     except Exception:
         pass
+    conn.commit()
+    _schema_ready = True
+
+
+def _ensure_question_patches(conn: sqlite3.Connection) -> None:
     try:
         if _apply_question_corrections(conn):
             _schedule_push()
     except Exception as exc:
         print(f"[damoa] 문항 정오 반영 실패: {exc}", flush=True)
-    conn.commit()
-    _schema_ready = True
 
 
 def get_conn() -> sqlite3.Connection:
@@ -466,6 +515,7 @@ def get_conn() -> sqlite3.Connection:
     _conn.execute("PRAGMA busy_timeout = 8000")
     _conn.execute("PRAGMA foreign_keys = ON")
     _ensure_schema(_conn)
+    _ensure_question_patches(_conn)
     return _conn
 
 
