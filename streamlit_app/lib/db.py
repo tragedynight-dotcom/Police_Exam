@@ -315,16 +315,20 @@ def _as_row(cursor, row):
     return dict(zip(cols, row))
 
 
-def _apply_question_corrections(conn: sqlite3.Connection) -> None:
+def _apply_question_corrections(conn: sqlite3.Connection) -> bool:
     """한글 원본과 맞춰 정답·해설이 밀린 문항을 고친다."""
     try:
         rows = conn.execute(
-            'SELECT id, stem, answerIndex, explanation FROM "Question"'
+            """
+            SELECT q.id, q.stem, q.sourceOrder, c.name AS categoryName
+            FROM "Question" q
+            JOIN "QuestionCategory" c ON c.id = q.categoryId
+            """
         ).fetchall()
     except sqlite3.OperationalError:
-        return
+        return False
     if not rows:
-        return
+        return False
 
     dv3_exp = (
         "1. 수사기관에 피해사실을 진술하거나 관련 자료를 제출할 수 있는 권리 "
@@ -363,54 +367,52 @@ def _apply_question_corrections(conn: sqlite3.Connection) -> None:
         "2번: 형사·행정소송 관련 많이 제기되는 요소로 이의제기 차단을 위해 입에 물었던 불대는 "
         "1회 사용으로 적용"
     )
-    update = conn.execute
-    changed = False
+    changed = 0
     for row in rows:
-        qid = row["id"] if isinstance(row, sqlite3.Row) else row[0]
-        stem = row["stem"] if isinstance(row, sqlite3.Row) else row[1]
-        text = stem or ""
-        if "메신저 피싱" in text and "옳지" in text:
-            update(
-                'UPDATE "Question" SET answerIndex = 2 WHERE id = ?',
-                (qid,),
-            )
-            changed = True
-        elif "긴급임시조치의 유형" in text and "불이행" in text:
-            update(
+        qid = row["id"]
+        stem = row["stem"] or ""
+        cat = row["categoryName"] or ""
+        n = int(row["sourceOrder"] or 0)
+        if cat.startswith("6.") and n == 9:
+            conn.execute('UPDATE "Question" SET answerIndex = 2 WHERE id = ?', (qid,))
+            changed += 1
+        elif cat.startswith("8.") and n == 1:
+            conn.execute(
                 'UPDATE "Question" SET explanation = ? WHERE id = ?',
                 (dv1_exp, qid),
             )
-            changed = True
-        elif "가정폭력 처벌법 제2조" in text and "가정폭력 유형" in text:
+            changed += 1
+        elif cat.startswith("8.") and n == 2:
             marker = "다음 중 가정폭력 처벌법 제2조"
-            idx = text.find(marker)
-            new_stem = text[idx:] if idx >= 0 else text
-            update(
-                'UPDATE "Question" SET stem = ? WHERE id = ?',
-                (new_stem, qid),
-            )
-            changed = True
-        elif "가정폭력 신고현장에 출동한 경찰관" in text:
-            update(
+            idx = stem.find(marker)
+            if idx > 0:
+                conn.execute(
+                    'UPDATE "Question" SET stem = ? WHERE id = ?',
+                    (stem[idx:], qid),
+                )
+                changed += 1
+        elif cat.startswith("8.") and n == 3:
+            conn.execute(
                 'UPDATE "Question" SET answerIndex = 2, explanation = ? WHERE id = ?',
                 (dv3_exp, qid),
             )
-            changed = True
-        elif "손실보상 지급요건" in text:
-            update(
+            changed += 1
+        elif cat.startswith("8.") and n == 5:
+            conn.execute(
                 'UPDATE "Question" SET answerIndex = 3, explanation = ? WHERE id = ?',
                 (dv5_exp, qid),
             )
-            changed = True
-        elif "음주운전 처리 절차와 관련하여" in text:
-            new_stem = text.replace("가장 적절한 것은", "가장 올바른 것은")
-            update(
+            changed += 1
+        elif cat.startswith("13.") and n == 3:
+            conn.execute(
                 'UPDATE "Question" SET stem = ?, explanation = ? WHERE id = ?',
-                (new_stem, dui3_exp, qid),
+                (stem.replace("가장 적절한 것은", "가장 올바른 것은"), dui3_exp, qid),
             )
-            changed = True
+            changed += 1
     if changed:
         conn.commit()
+        print(f"[damoa] 문항 정오 {changed}건을 반영했습니다.", flush=True)
+    return changed > 0
 
 
 def _ensure_schema(conn: sqlite3.Connection) -> None:
@@ -433,7 +435,8 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
     except Exception:
         pass
     try:
-        _apply_question_corrections(conn)
+        if _apply_question_corrections(conn):
+            _schedule_push()
     except Exception as exc:
         print(f"[damoa] 문항 정오 반영 실패: {exc}", flush=True)
     conn.commit()
